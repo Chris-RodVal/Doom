@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>Mini DOOM-like FPS</title>
+<title>FPS DEMO - Laboratorio Nivel 1</title>
 <style>
   html, body {
     margin: 0;
@@ -20,7 +20,6 @@
     background: #000;
   }
 
-  /* UI overlay */
   #ui {
     position: fixed;
     left: 0;
@@ -34,6 +33,52 @@
     pointer-events: none;
     text-shadow: 0 0 4px #000;
     font-family: monospace;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  #statsRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  #healthBarContainer {
+    width: 140px;
+    height: 12px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid #400;
+    border-radius: 3px;
+    position: relative;
+  }
+  #healthBarFill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    background: linear-gradient(#a00,#600);
+    border-radius: 2px;
+    width: 100%;
+  }
+  #healthText {
+    font-size: 11px;
+    line-height: 1;
+    text-shadow: 0 0 4px #000;
+    margin-left: 4px;
+  }
+
+  #missionText {
+    max-width: 400px;
+    font-size: 11px;
+    line-height: 1.4;
+    color: #ccc;
+    text-shadow: 0 0 4px #000;
+  }
+
+  #debug {
+    font-size: 10px;
+    color: #666;
   }
 
   #centerText {
@@ -41,7 +86,7 @@
     top: 50%;
     left: 50%;
     translate: -50% -50%;
-    color: rgba(255,255,255,0.7);
+    color: rgba(255,255,255,0.8);
     font-family: monospace;
     font-size: 14px;
     text-align: center;
@@ -67,8 +112,6 @@
     position: absolute;
     background: rgba(255,255,255,0.8);
   }
-
-  /* vertical line */
   #crosshair:before {
     left: 50%;
     top: 0;
@@ -76,8 +119,6 @@
     height: 100%;
     translate: -50% 0;
   }
-
-  /* horizontal line */
   #crosshair:after {
     top: 50%;
     left: 0;
@@ -89,7 +130,9 @@
   #startOverlay {
     position: fixed;
     inset: 0;
-    background: radial-gradient(circle at center, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.9) 70%);
+    background: radial-gradient(circle at center,
+      rgba(0,0,0,0.4) 0%,
+      rgba(0,0,0,0.9) 70%);
     display: grid;
     place-items: center;
     color: #fff;
@@ -115,7 +158,6 @@
     background: #b10000;
   }
 
-  /* mobile hint hidden on desktop */
   @media (min-width: 768px) {
     .mobile-hint { display: none; }
   }
@@ -126,8 +168,23 @@
 <canvas id="gameCanvas" width="800" height="450"></canvas>
 
 <div id="ui">
-  <div><b>WASD</b> moverse · <b>Mouse</b> mirar · <b>Click</b> disparar</div>
-  <div>FPS demo tipo DOOM (raycasting JS puro)</div>
+  <div id="statsRow" style="align-items:center;">
+    <div style="display:flex;align-items:center;gap:4px;">
+      <div id="healthBarContainer">
+        <div id="healthBarFill"></div>
+      </div>
+      <div id="healthText">VIDA 100/100</div>
+    </div>
+    <div style="font-size:11px;color:#aaa;text-shadow:0 0 4px #000;">
+      WASD moverse · Mouse mirar · Click disparar
+    </div>
+  </div>
+
+  <div id="missionText">
+    NIVEL 1 · Laboratorio Abandonado<br>
+    Objetivo: Recupera el <b>NÚCLEO ROJO</b> y llega a la PUERTA DE EXTRACCIÓN.
+  </div>
+
   <div id="debug"></div>
 </div>
 
@@ -135,13 +192,17 @@
 <div id="crosshair"></div>
 
 <div id="startOverlay">
-  <div style="max-width:320px;">
+  <div style="max-width:340px;">
     <h1 style="margin:0 0 12px;font-size:20px;letter-spacing:-0.03em;font-weight:700;font-family:monospace;">
-      MINI DOOM-LIKE<br>WEB DEMO
+      NIVEL 1: LABORATORIO ABANDONADO
     </h1>
     <p style="margin:0 0 16px;font-size:14px;line-height:1.4;color:#ccc;font-family:monospace;">
-      Haz click en "INICIAR" y acepta capturar el mouse.<br>
-      Esto es un prototipo educativo sin texturas reales de DOOM.
+      Aislado bajo tierra. La instalación colapsó después del experimento del Núcleo Rojo.<br><br>
+      Tarea:<br>
+      1) Encuentra el Núcleo Rojo.<br>
+      2) Sobrevive a los mutantes.<br>
+      3) Llega a la puerta de extracción.<br><br>
+      Haz click en INICIAR y acepta capturar el mouse.
     </p>
     <button id="startBtn">INICIAR</button>
     <p class="mobile-hint" style="margin-top:12px;color:#f66;font-size:12px;">
@@ -152,15 +213,13 @@
 
 <script>
 /*
-  ============================
-  CONFIGURACIÓN DEL MOTOR
-  ============================
+=====================================================
+CONFIG BÁSICA
+=====================================================
 */
-
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
-// Escala interna vs pantalla: vamos a ajustar en resize para que se vea nítido
 function resizeCanvas() {
   canvas.width = window.innerWidth;
   canvas.height = window.innerHeight;
@@ -172,61 +231,82 @@ const debugEl = document.getElementById('debug');
 const startOverlay = document.getElementById('startOverlay');
 const startBtn = document.getElementById('startBtn');
 const centerText = document.getElementById('centerText');
+const missionTextEl = document.getElementById('missionText');
+const healthBarFill = document.getElementById('healthBarFill');
+const healthText = document.getElementById('healthText');
 
-// Mapa (grid 2D). 1 = pared sólida, 0 = espacio libre.
+let mouseLocked = false;
+
+/*
+=====================================================
+MAPA Y PAREDES
+Tipos de pared:
+1 = metal rojo industrial
+2 = metal gris / laboratorio
+3 = panel tóxico verde
+4 = puerta de salida (cerrada hasta tener núcleo)
+0 = vacío
+=====================================================
+Mapa grande tipo lab subterráneo (20x20 aprox)
+Incluimos pasillos, cámara central (núcleo rojo),
+zona de extracción con puerta (4).
+*/
 const worldMap = [
-  [1,1,1,1,1,1,1,1,1,1,1,1],
-  [1,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,1,1,1,0,0,0,0,1],
-  [1,0,0,0,1,0,1,0,0,0,0,1],
-  [1,0,0,0,1,0,1,0,0,0,0,1],
-  [1,0,0,0,1,1,1,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,1],
-  [1,1,1,1,1,1,1,1,1,1,1,1],
+ //0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,2,2,2,0,0,0,0,0,0,0,3,3,3,0,0,0,0,1],
+  [1,0,2,0,2,0,0,0,0,0,0,0,3,0,3,0,0,0,0,1],
+  [1,0,2,2,2,0,0,0,0,0,0,0,3,3,3,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
 ];
 const mapWidth = worldMap[0].length;
 const mapHeight = worldMap.length;
 
-// Jugador
-let px = 3.5;   // posición X en el mapa
-let py = 3.5;   // posición Y en el mapa
-let pAngle = 0; // ángulo mirando (radianes)
+/*
+=====================================================
+PLAYER ESTADO
+=====================================================
+*/
+let px = 2.5;
+let py = 2.5;
+let pAngle = 0;
 
-const FOV = Math.PI / 3; // campo de visión ~60°
+const FOV = Math.PI / 3; // ~60°
 const moveSpeed = 3.0;   // unidades/seg
-const rotSpeed = 2.5;    // rad/seg (rotación con teclado, mouse es más libre)
-
-let mouseLocked = false;
-
-// Control teclado:
-const keys = {
-  w:false,
-  a:false,
-  s:false,
-  d:false,
-  left:false,
-  right:false
-};
-
-// Enemigos muy simples (sprites billboards)
-const enemies = [
-  {x: 6.5, y: 4.5, dist: 0, alive: true},
-  {x: 8.5, y: 8.5, dist: 0, alive: true},
-];
-
-// Arma / disparo
-let shooting = false;
+const rotSpeed = 2.5;    // rad/seg con flechas
 let shootCooldown = 0;
+let shooting = false;
+
+let playerHP = 100;
+const playerMaxHP = 100;
+const regenPerSec = 2; // regeneración lenta
+let hasCore = false;   // recogiste el Núcleo Rojo?
 
 /*
-  ============================
-  INPUT
-  ============================
+=====================================================
+INPUT
+=====================================================
 */
+const keys = {
+  w:false,a:false,s:false,d:false,
+  left:false,right:false
+};
+
 document.addEventListener('keydown', e=>{
   switch(e.code){
     case 'KeyW': keys.w=true; break;
@@ -248,8 +328,8 @@ document.addEventListener('keyup', e=>{
   }
 });
 
-function lockPointer() {
-  canvas.requestPointerLock = canvas.requestPointerLock ||
+function lockPointer(){
+  canvas.requestPointerLock = canvas.requestPointerLock||
                               canvas.mozRequestPointerLock;
   canvas.requestPointerLock();
 }
@@ -262,42 +342,224 @@ document.addEventListener('pointerlockchange', ()=>{
     centerText.textContent = "Click para capturar mouse";
   }
 });
+
 document.addEventListener('mousemove', e=>{
   if(mouseLocked){
-    const sensitivity = 0.0025; // ajustar velocidad de giro mouse
+    const sensitivity = 0.0025;
     pAngle += e.movementX * sensitivity;
   }
 });
 
-canvas.addEventListener('mousedown', e=>{
-  // disparar
-  if (mouseLocked && shootCooldown <= 0) {
-    shooting = true;
-    shootCooldown = 0.25; // 250ms
-    tryHitEnemy();
-  } else {
-    // si no está locked, al click bloquear mouse
-    if(!mouseLocked){
-      lockPointer();
+canvas.addEventListener('mousedown', ()=>{
+  if(mouseLocked){
+    if(shootCooldown<=0){
+      shooting = true;
+      shootCooldown = 0.25;
+      tryHitEnemy();
     }
+  } else {
+    lockPointer();
   }
 });
 
 /*
-  ============================
-  LÓGICA DE MOVIMIENTO
-  ============================
+=====================================================
+TEXTURAS OFFSCREEN
+Creamos 4 texturas 64x64 para paredes
++ sprites para enemigos y pickups
+=====================================================
 */
+function makeWallTexture(patternFn){
+  const c = document.createElement('canvas');
+  c.width = 64; c.height = 64;
+  const cx = c.getContext('2d');
+  const imgData = cx.createImageData(64,64);
+  const d = imgData.data;
+  for(let y=0;y<64;y++){
+    for(let x=0;x<64;x++){
+      const idx=(y*64+x)*4;
+      const col = patternFn(x,y); // {r,g,b}
+      d[idx+0]=col.r;
+      d[idx+1]=col.g;
+      d[idx+2]=col.b;
+      d[idx+3]=255;
+    }
+  }
+  cx.putImageData(imgData,0,0);
+  return c;
+}
+
+// pared 1: metal rojo oscuro con paneles
+const wallTex1 = makeWallTexture((x,y)=>{
+  const stripe = (x%16<2||y%16<2)? 80:0;
+  return {r:150+stripe,g:20+stripe*0.2,b:20+stripe*0.2};
+});
+
+// pared 2: gris laboratorio con líneas
+const wallTex2 = makeWallTexture((x,y)=>{
+  const grid = ((x%8===0)||(y%8===0))?200:140;
+  return {r:grid,g:grid,b:grid+10};
+});
+
+// pared 3: tóxico verde brillante
+const wallTex3 = makeWallTexture((x,y)=>{
+  const noise = ((x*y)%13)*10;
+  const baseG = 180+ (noise%40);
+  return {r:20,g:baseG,b:20};
+});
+
+// pared 4: puerta de extracción (al principio bloqueada)
+const wallTex4 = makeWallTexture((x,y)=>{
+  // como puerta metálica amarilla/negra, franjas
+  const stripe = ( ( (x+y) %16)<8 );
+  if(stripe){
+    return {r:230,g:210,b:40};
+  } else {
+    return {r:30,g:30,b:30};
+  }
+});
+
+const wallTextures = {
+  1: wallTex1,
+  2: wallTex2,
+  3: wallTex3,
+  4: wallTex4
+};
+
+// Sprites enemigo tipo soldado
+function makeEnemyTexture(colorBody,colorFace){
+  const c = document.createElement('canvas');
+  c.width=32; c.height=48;
+  const cx = c.getContext('2d');
+
+  // cuerpo
+  cx.fillStyle = colorBody;
+  cx.fillRect(0,8,32,40);
+
+  // cabeza
+  cx.fillStyle = colorFace;
+  cx.fillRect(8,0,16,16);
+
+  // ojos
+  cx.fillStyle="#000";
+  cx.fillRect(12,6,3,3);
+  cx.fillRect(17,6,3,3);
+
+  // borde
+  cx.strokeStyle="#000";
+  cx.lineWidth=2;
+  cx.strokeRect(0,8,32,40);
+  cx.strokeRect(8,0,16,16);
+
+  return c;
+}
+
+// 3 tipos de enemigo
+const ENEMY_TYPES = {
+  SOLDIER: {
+    name:"Soldado",
+    dmgPerSec:10,
+    range:2.5,
+    texture: makeEnemyTexture("#555","#ffe0c0")
+  },
+  MUTANT: {
+    name:"Mutante",
+    dmgPerSec:20,
+    range:2.0,
+    texture: makeEnemyTexture("#0a0","#c0ffb0")
+  },
+  DEMON: {
+    name:"Demonio",
+    dmgPerSec:35,
+    range:1.6,
+    texture: makeEnemyTexture("#800","#ffb0b0")
+  }
+};
+
+// Sprite pickup medkit
+function makeMedkitTexture(){
+  const c = document.createElement('canvas');
+  c.width=24;c.height=24;
+  const cx=c.getContext('2d');
+  cx.fillStyle="#fff";
+  cx.fillRect(0,0,24,24);
+  cx.fillStyle="#c00";
+  cx.fillRect(10,4,4,16);
+  cx.fillRect(4,10,16,4);
+  cx.strokeStyle="#000";
+  cx.lineWidth=2;
+  cx.strokeRect(0,0,24,24);
+  return c;
+}
+const medkitTex = makeMedkitTexture();
+
+// Sprite pickup Núcleo Rojo
+function makeCoreTexture(){
+  const c = document.createElement('canvas');
+  c.width=24;c.height=24;
+  const cx=c.getContext('2d');
+  cx.fillStyle="#400";
+  cx.fillRect(0,0,24,24);
+  cx.fillStyle="#f00";
+  cx.beginPath();
+  cx.arc(12,12,8,0,Math.PI*2);
+  cx.fill();
+  cx.strokeStyle="#000";
+  cx.lineWidth=2;
+  cx.strokeRect(0,0,24,24);
+  cx.strokeStyle="#900";
+  cx.lineWidth=2;
+  cx.stroke();
+  return c;
+}
+const coreTex = makeCoreTexture();
+
+/*
+=====================================================
+ENEMIGOS Y PICKUPS EN EL NIVEL
+=====================================================
+*/
+const enemies = [
+  {x:5.5,y:2.5, type:ENEMY_TYPES.SOLDIER, alive:true },
+  {x:7.5,y:3.5, type:ENEMY_TYPES.MUTANT , alive:true },
+  {x:12.5,y:2.5,type:ENEMY_TYPES.SOLDIER, alive:true },
+  {x:14.5,y:3.5,type:ENEMY_TYPES.DEMON  , alive:true },
+  {x:10.5,y:14.5,type:ENEMY_TYPES.MUTANT, alive:true },
+  {x:16.5,y:16.0,type:ENEMY_TYPES.DEMON , alive:true },
+];
+
+const pickups = [
+  // Medkits
+  {x:4.5,y:5.5, kind:"medkit", taken:false},
+  {x:10.5,y:10.5, kind:"medkit", taken:false},
+  {x:15.5,y:15.5, kind:"medkit", taken:false},
+  // Núcleo Rojo (key item, sólo uno)
+  {x:12.5,y:13.5, kind:"core", taken:false},
+];
+
+// Para puerta de salida: está en (18,16). Es celda 4 en mapa.
+// Sólo se podrá "terminar" si hasCore = true y llegas cerca.
+const exitCell = {x:18,y:16};
+
+/*
+=====================================================
+MOVIMIENTO DEL JUGADOR (colisiones)
+=====================================================
+*/
+function cellIsWall(x, y) {
+  const cell = worldMap[y]?.[x] ?? 1;
+  return cell!==0;
+}
+
 function tryMove(nx, ny){
-  // Evitar atravesar paredes: checamos celda del mapa
-  if(worldMap[Math.floor(ny)][Math.floor(nx)] === 0){
+  // checa paredes
+  if(!cellIsWall(Math.floor(nx),Math.floor(ny))){
     px = nx;
     py = ny;
   }
 }
 
 function updatePlayer(dt){
-  // rotación con flechas
   if(keys.left)  pAngle -= rotSpeed*dt;
   if(keys.right) pAngle += rotSpeed*dt;
 
@@ -317,258 +579,409 @@ function updatePlayer(dt){
   const len = Math.hypot(movX,movY);
   if(len>0){
     movX/=len; movY/=len;
-    const nx = px + movX * moveSpeed * dt;
-    const ny = py + movY * moveSpeed * dt;
-    tryMove(nx, ny);
+    tryMove(px + movX * moveSpeed * dt,
+            py + movY * moveSpeed * dt);
+  }
+
+  // regen lenta
+  if(playerHP>0 && playerHP<playerMaxHP){
+    playerHP += regenPerSec * dt;
+    if(playerHP>playerMaxHP) playerHP = playerMaxHP;
   }
 }
 
 /*
-  ============================
-  RAYCASTING = "motor gráfico"
-  ============================
-  Para cada columna (x de pantalla):
-  1. Calcula el rayo en el ángulo correspondiente.
-  2. Avanza en el mapa con DDA hasta chocar una pared.
-  3. Dibuja una columna proporcionalmente inversa a la distancia.
+=====================================================
+RAYCASTING MEJORADO CON TEXTURAS
+=====================================================
+Devolvemos:
+- dist
+- side
+- mapX,mapY
+- wallType
+- texX (coordenada x en la textura 0..63)
 */
-
 function castRay(rayAngle){
-  // dirección del rayo
   const rayDirX = Math.cos(rayAngle);
   const rayDirY = Math.sin(rayAngle);
 
-  // posición en grid
   let mapX = Math.floor(px);
   let mapY = Math.floor(py);
 
-  // longitud del rayo desde el paso horizontal/vertical
-  const deltaDistX = (rayDirX === 0) ? 1e30 : Math.abs(1 / rayDirX);
-  const deltaDistY = (rayDirY === 0) ? 1e30 : Math.abs(1 / rayDirY);
+  const deltaDistX = (rayDirX===0)?1e30:Math.abs(1/rayDirX);
+  const deltaDistY = (rayDirY===0)?1e30:Math.abs(1/rayDirY);
 
   let stepX, sideDistX;
   let stepY, sideDistY;
 
-  // Inicializar sideDist
-  if(rayDirX < 0){
-    stepX = -1;
-    sideDistX = (px - mapX) * deltaDistX;
+  if(rayDirX<0){
+    stepX=-1;
+    sideDistX=(px-mapX)*deltaDistX;
   } else {
-    stepX = 1;
-    sideDistX = (mapX + 1.0 - px) * deltaDistX;
+    stepX=1;
+    sideDistX=(mapX+1.0-px)*deltaDistX;
   }
-  if(rayDirY < 0){
-    stepY = -1;
-    sideDistY = (py - mapY) * deltaDistY;
+  if(rayDirY<0){
+    stepY=-1;
+    sideDistY=(py-mapY)*deltaDistY;
   } else {
-    stepY = 1;
-    sideDistY = (mapY + 1.0 - py) * deltaDistY;
+    stepY=1;
+    sideDistY=(mapY+1.0-py)*deltaDistY;
   }
 
-  let hit = 0;
-  let side = 0;
-
-  // DDA
-  while(hit === 0){
-    // Salto en X o en Y
-    if(sideDistX < sideDistY){
-      sideDistX += deltaDistX;
-      mapX += stepX;
-      side = 0;
+  let hit=0;
+  let side=0;
+  while(hit===0){
+    if(sideDistX<sideDistY){
+      sideDistX+=deltaDistX;
+      mapX+=stepX;
+      side=0;
     } else {
-      sideDistY += deltaDistY;
-      mapY += stepY;
-      side = 1;
+      sideDistY+=deltaDistY;
+      mapY+=stepY;
+      side=1;
     }
-    // ¿golpeó pared?
-    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight) {
-      hit = 1;
+    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight){
+      hit=1;
       break;
     }
-    if(worldMap[mapY][mapX] > 0){
-      hit = 1;
+    if(worldMap[mapY][mapX] !==0){
+      hit=1;
     }
   }
 
-  // Distancia perpendicular al plano cámara
   let perpWallDist;
-  if(side === 0){
-    perpWallDist = (sideDistX - deltaDistX);
+  if(side===0){
+    perpWallDist=(sideDistX-deltaDistX);
   } else {
-    perpWallDist = (sideDistY - deltaDistY);
+    perpWallDist=(sideDistY-deltaDistY);
   }
 
-  return {dist: perpWallDist, side};
+  const wallType = worldMap[mapY]?.[mapX] || 1;
+
+  // Coordenada de impacto en pared para texturizar:
+  let wallX;
+  if(side===0){
+    wallX = py + perpWallDist * rayDirY;
+  } else {
+    wallX = px + perpWallDist * rayDirX;
+  }
+  wallX -= Math.floor(wallX);
+
+  // texX en 0..63
+  let texX = Math.floor(wallX * 64);
+  // Corrección para caras opuestas
+  if(side===0 && rayDirX>0) texX = 64-texX-1;
+  if(side===1 && rayDirY<0) texX = 64-texX-1;
+
+  return {
+    dist: perpWallDist,
+    side,
+    mapX,
+    mapY,
+    wallType,
+    texX
+  };
 }
 
-// Dibujo del "mundo" 3D
+/*
+=====================================================
+RENDER DEL MUNDO CON TEXTURAS
+Guardamos zBuffer por columna para sprites
+=====================================================
+*/
+let zBuffer = [];
+
 function renderWorld(){
   const w = canvas.width;
   const h = canvas.height;
 
-  // Fondo: cielo y piso
-  // cielo
+  // CIELO
   const skyGradient = ctx.createLinearGradient(0,0,0,h/2);
-  skyGradient.addColorStop(0,"#222");
-  skyGradient.addColorStop(1,"#000022");
+  skyGradient.addColorStop(0,"#111122");
+  skyGradient.addColorStop(1,"#000000");
   ctx.fillStyle = skyGradient;
   ctx.fillRect(0,0,w,h/2);
 
-  // piso
+  // PISO
   const floorGradient = ctx.createLinearGradient(0,h/2,0,h);
   floorGradient.addColorStop(0,"#1a1a1a");
   floorGradient.addColorStop(1,"#000000");
   ctx.fillStyle = floorGradient;
   ctx.fillRect(0,h/2,w,h/2);
 
-  // Raycast por columna
-  for(let x=0; x<w; x++){
-    const cameraX = (2*x/w - 1); // de -1 a 1
-    const rayAngle = pAngle + Math.atan(cameraX * Math.tan(FOV/2));
+  // Paredes
+  zBuffer.length = w;
 
+  for(let x=0;x<w;x++){
+    const cameraX = (2*x/w -1);
+    const rayAngle = pAngle + Math.atan(cameraX * Math.tan(FOV/2));
     const ray = castRay(rayAngle);
     const dist = ray.dist;
+    zBuffer[x] = dist;
 
-    // Altura de la pared proyectada
+    // altura columna
     const lineH = Math.floor(h / dist);
-
-    // Limitar en pantalla
     let drawStart = -lineH/2 + h/2;
     let drawEnd   =  lineH/2 + h/2;
-    if(drawStart < 0) drawStart = 0;
-    if(drawEnd >= h)  drawEnd = h-1;
+    if(drawStart<0) drawStart=0;
+    if(drawEnd>=h)  drawEnd=h-1;
 
-    // Color distinto según lado para "sombrear"
-    // Paredes ladoX más claras, ladoY más oscuras
-    if(ray.side===0){
-      ctx.fillStyle = "#884444";
-    } else {
-      ctx.fillStyle = "#552222";
+    const tex = wallTextures[ ray.wallType ] || wallTex1;
+    // sombreado según side
+    // sacamos columna texX de tex y la estiramos
+    const texCtx = tex.getContext('2d');
+    const colData = texCtx.getImageData(ray.texX,0,1,64).data;
+
+    for(let y=drawStart;y<drawEnd;y++){
+      // mapeo y pantalla -> y tex
+      const dy = y - h/2 + lineH/2;
+      const texY = Math.floor(dy / lineH * 64);
+      const idx = texY*4;
+      let r = colData[idx+0];
+      let g = colData[idx+1];
+      let b = colData[idx+2];
+
+      // sombra lado
+      if(ray.side===1){
+        r*=0.6; g*=0.6; b*=0.6;
+      }
+      // leve atenuación por distancia
+      const shade = 1/(1+dist*0.1);
+      r*=shade; g*=shade; b*=shade;
+
+      ctx.fillStyle = `rgb(${r|0},${g|0},${b|0})`;
+      ctx.fillRect(x,y,1,1);
     }
-
-    ctx.fillRect(x, drawStart, 1, drawEnd - drawStart);
   }
 }
 
 /*
-  ============================
-  SPRITES (enemigos)
-  ============================
-  Para cada enemigo vivo:
-    - Calculamos vector desde el jugador.
-    - Proyectamos en la "pantalla".
-    - Dibujamos un rectángulo simple simulando sprite.
+=====================================================
+SPRITES: ENEMIGOS, PICKUPS
+- Billboard proyectado.
+- Usamos zBuffer para ocultar si hay pared delante.
+=====================================================
 */
-function renderEnemies(){
+function projectSprite(worldX,worldY, texW, texH){
   const w = canvas.width;
   const h = canvas.height;
 
-  // Ordenar por distancia (dibujar de lejos a cerca)
-  for(const e of enemies){
-    e.dist = Math.hypot(e.x - px, e.y - py);
-  }
-  enemies.sort((a,b)=>b.dist - a.dist);
+  const dx = worldX - px;
+  const dy = worldY - py;
+  const dist = Math.hypot(dx,dy);
+  const angleTo = Math.atan2(dy,dx);
 
-  for(const e of enemies){
-    if(!e.alive) continue;
+  let angleDiff = angleTo - pAngle;
+  while(angleDiff < -Math.PI) angleDiff+=2*Math.PI;
+  while(angleDiff >  Math.PI) angleDiff-=2*Math.PI;
 
-    const dx = e.x - px;
-    const dy = e.y - py;
-    const angleToEnemy = Math.atan2(dy, dx);
+  if(Math.abs(angleDiff) > FOV) return null;
 
-    // Diferencia angular normalizada -pi..pi
-    let angleDiff = angleToEnemy - pAngle;
-    while(angleDiff < -Math.PI) angleDiff += 2*Math.PI;
-    while(angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+  const screenX = (0.5 + (angleDiff / (FOV)) ) * w;
+  if(dist<0.2) return null;
 
-    // Solo dibuja si está al frente (|angleDiff| < FOV/2 aprox)
-    if(Math.abs(angleDiff) > FOV) continue;
+  const spriteH = (h / dist);
+  const spriteW = spriteH * (texW/texH);
 
-    const dist = Math.hypot(dx,dy);
-    if(dist < 0.2) continue; // muy cerca, evitar división ridícula
+  const drawX = screenX - spriteW/2;
+  const drawY = h/2 - spriteH/2;
 
-    // Proyección horizontal en pantalla:
-    const screenX = (0.5 + (angleDiff / (FOV)) ) * w;
+  return {dist,drawX,drawY,spriteW,spriteH,angleTo};
+}
 
-    // Tamaño en pantalla inverso a distancia
-    const spriteH = (h / dist) * 0.7;
-    const spriteW = spriteH * 0.6;
+function castOneAngle(angle){
+  return castRay(angle).dist;
+}
 
-    const drawX = screenX - spriteW/2;
-    const drawY = h/2 - spriteH/2;
+function renderSpriteBillboard(tex,drawX,drawY,spriteW,spriteH,dist){
+  const w = canvas.width;
+  const h = canvas.height;
+  const texCtx = tex.getContext('2d');
+  const tw = tex.width;
+  const th = tex.height;
+  const imgData = texCtx.getImageData(0,0,tw,th).data;
 
-    // " depth check " rudimentario:
-    // Si el enemigo está detrás de una pared más cerca, no deberíamos verlo.
-    // Para eso, casteamos un rayo justo a angleToEnemy y comparamos.
-    const testRay = castRay(angleToEnemy);
-    if(testRay.dist < dist) {
-      // pared bloqueando
-      continue;
+  const startX = Math.floor(drawX);
+  const endX   = Math.floor(drawX+spriteW);
+  for(let sx=startX;sx<endX;sx++){
+    if(sx<0||sx>=w) continue;
+    const colRel = (sx - drawX)/spriteW;
+    const texX = Math.floor(colRel * tw);
+
+    // checamos profundidad: si sprite está detrás de pared, no dibujar esa columna
+    if(dist > zBuffer[sx]) continue;
+
+    const startY = Math.floor(drawY);
+    const endY   = Math.floor(drawY+spriteH);
+    for(let sy=startY;sy<endY;sy++){
+      if(sy<0||sy>=h) continue;
+      const rowRel = (sy - drawY)/spriteH;
+      const texY = Math.floor(rowRel * th);
+      const idx=(texY*tw+texX)*4;
+      const r=imgData[idx+0];
+      const g=imgData[idx+1];
+      const b=imgData[idx+2];
+      const a=imgData[idx+3];
+
+      if(a<20) continue; // transparencia
+
+      // sombreo distancia
+      const shade = 1/(1+dist*0.2);
+      const R=(r*shade)|0;
+      const G=(g*shade)|0;
+      const B=(b*shade)|0;
+
+      ctx.fillStyle=`rgb(${R},${G},${B})`;
+      ctx.fillRect(sx,sy,1,1);
     }
-
-    // Dibujar enemigo como rectángulo rojo con borde negro
-    ctx.fillStyle = "#aa0000";
-    ctx.fillRect(drawX, drawY, spriteW, spriteH);
-
-    ctx.strokeStyle = "#000000";
-    ctx.lineWidth = 2;
-    ctx.strokeRect(drawX, drawY, spriteW, spriteH);
-
-    // "cara"
-    ctx.fillStyle = "#ffffcc";
-    const faceW = spriteW*0.4;
-    const faceH = spriteH*0.25;
-    ctx.fillRect(drawX+spriteW*0.3, drawY+spriteH*0.2, faceW, faceH);
   }
 }
 
-function tryHitEnemy(){
-  // Disparo: tomamos el enemigo más cercano al centro de la mira (angleDiff pequeño)
-  const aimTolerance = 0.05; // ~3°
-  let best = null;
+function renderEnemies(dt){
+  // ordenar lejos->cerca para que el más cercano pinte encima
+  for(const e of enemies){
+    e.dist = Math.hypot(e.x-px, e.y-py);
+  }
+  enemies.sort((a,b)=>b.dist-a.dist);
+
   for(const e of enemies){
     if(!e.alive) continue;
-    const dx = e.x - px;
-    const dy = e.y - py;
+    const proj = projectSprite(e.x,e.y,
+      e.type.texture.width,e.type.texture.height);
+    if(!proj) continue;
+
+    // línea de visión: si pared bloquea, skip
+    const losDist = castOneAngle(proj.angleTo);
+    if(losDist < e.dist-0.05){ // hay pared entremedio
+      continue;
+    }
+
+    // daño al jugador si está cerca
+    if(e.dist < e.type.range){
+      playerHP -= e.type.dmgPerSec * dt;
+      if(playerHP<0) playerHP=0;
+    }
+
+    // dibujar
+    renderSpriteBillboard(
+      e.type.texture,
+      proj.drawX,proj.drawY,
+      proj.spriteW,proj.spriteH,
+      e.dist
+    );
+  }
+}
+
+function renderPickups(){
+  // ordenar igual, lejos->cerca
+  const tmp = [];
+  for(const p of pickups){
+    if(p.taken) continue;
+    const t = (p.kind==="medkit")?medkitTex:coreTex;
+    const proj = projectSprite(p.x,p.y,t.width,t.height);
+    if(!proj) continue;
+    tmp.push({p,tex:t,proj});
+  }
+  tmp.sort((A,B)=>B.proj.dist - A.proj.dist);
+
+  for(const obj of tmp){
+    const {p,tex,proj} = obj;
+
+    // checar si pared bloquea
+    const losDist = castOneAngle(proj.angleTo);
+    if(losDist < proj.dist-0.05) continue;
+
+    // Si el jugador está muy cerca, recoger
+    const dToPlayer = Math.hypot(p.x-px,p.y-py);
+    if(dToPlayer<1.0){
+      if(p.kind==="medkit"){
+        // curar
+        playerHP += 30;
+        if(playerHP>playerMaxHP) playerHP=playerMaxHP;
+        p.taken=true;
+        flashPickup("BOTIQUÍN +30HP");
+      } else if(p.kind==="core"){
+        hasCore=true;
+        p.taken=true;
+        missionTextEl.innerHTML =
+          "NIVEL 1 · Laboratorio Abandonado<br>" +
+          "Objetivo: Dirígete a la <b>PUERTA DE EXTRACCIÓN</b> al sur.";
+        flashPickup("NÚCLEO ROJO ADQUIRIDO");
+      }
+    }
+
+    // dibujar pickup sprite
+    renderSpriteBillboard(
+      tex,
+      proj.drawX,proj.drawY,
+      proj.spriteW,proj.spriteH,
+      proj.dist
+    );
+  }
+}
+
+/*
+=====================================================
+DISPARO
+Buscamos el enemigo alineado con la mira (angleDiff chico),
+sin pared entre medio, dañamos y lo matamos de una.
+=====================================================
+*/
+function tryHitEnemy(){
+  const aimTolerance = 0.05; // ~3°
+  let best=null;
+  for(const e of enemies){
+    if(!e.alive) continue;
+    const dx = e.x-px;
+    const dy = e.y-py;
     const ang = Math.atan2(dy,dx);
-    let diff = ang - pAngle;
+    let diff = ang-pAngle;
     while(diff<-Math.PI) diff+=2*Math.PI;
     while(diff> Math.PI) diff-=2*Math.PI;
 
-    if(Math.abs(diff) < aimTolerance){
+    if(Math.abs(diff)<aimTolerance){
       const d = Math.hypot(dx,dy);
-      // checamos que no haya pared entremedio
       const r = castRay(ang);
-      if(r.dist + 0.01 >= d){ // libre visión
+      if(r.dist + 0.01 >= d){
         if(!best || d<best.d){
-          best = {enemy:e, d};
+          best={enemy:e,d};
         }
       }
     }
   }
+
   if(best){
-    best.enemy.alive = false;
-    flashHit();
+    best.enemy.alive=false;
+    flashHit("ENEMIGO ELIMINADO");
   } else {
-    // fallaste
-    flashMiss();
+    flashMiss("FALLO");
   }
 }
 
 /*
-  ============================
-  EFECTOS VISUALES HUD
-  ============================
+=====================================================
+FLASH / HUD TEMPORAL
+=====================================================
 */
 let flashTimer = 0;
 let flashColor = "rgba(255,255,255,0.4)";
-function flashHit(){
-  flashColor = "rgba(0,255,0,0.4)";
-  flashTimer = 0.08;
+let flashMsg = "";
+
+function flashHit(msg){
+  flashColor="rgba(0,255,0,0.25)";
+  flashTimer=0.12;
+  flashMsg = msg;
 }
-function flashMiss(){
-  flashColor = "rgba(255,0,0,0.4)";
-  flashTimer = 0.08;
+function flashMiss(msg){
+  flashColor="rgba(255,0,0,0.25)";
+  flashTimer=0.12;
+  flashMsg = msg;
+}
+function flashPickup(msg){
+  flashColor="rgba(255,255,0,0.25)";
+  flashTimer=0.5;
+  flashMsg = msg;
 }
 
 function renderGun(dt){
@@ -577,81 +990,150 @@ function renderGun(dt){
   const gunW = w*0.25;
   const gunH = h*0.35;
 
-  // animación de disparo simple: retroceso
-  let recoilY = 0;
-  if(shooting){
-    recoilY = 10;
-  }
+  let recoilY=0;
+  if(shooting){ recoilY=10; }
 
   const x = w*0.5 - gunW*0.5;
   const y = h - gunH + recoilY;
 
-  // Arma estilo escopeta rectangular
-  ctx.fillStyle = "#444";
-  ctx.fillRect(x, y, gunW, gunH);
+  // cuerpo arma
+  ctx.fillStyle="#444";
+  ctx.fillRect(x,y,gunW,gunH);
 
-  ctx.fillStyle = "#777";
-  ctx.fillRect(x+gunW*0.1, y+gunH*0.4, gunW*0.8, gunH*0.5);
+  ctx.fillStyle="#777";
+  ctx.fillRect(x+gunW*0.1,y+gunH*0.4,gunW*0.8,gunH*0.5);
 
-  ctx.fillStyle = "#222";
-  ctx.fillRect(x+gunW*0.4, y+gunH*0.1, gunW*0.2, gunH*0.3);
+  ctx.fillStyle="#222";
+  ctx.fillRect(x+gunW*0.4,y+gunH*0.1,gunW*0.2,gunH*0.3);
+
+  // mensaje flash HUD
+  if(flashTimer>0 && flashMsg){
+    ctx.font="bold 16px monospace";
+    ctx.textAlign="center";
+    ctx.fillStyle="#fff";
+    ctx.shadowColor="#000";
+    ctx.shadowBlur=10;
+    ctx.fillText(flashMsg, w/2, h*0.6);
+    ctx.shadowBlur=0;
+  }
 }
 
 function renderFlash(dt){
   if(flashTimer>0){
-    ctx.fillStyle = flashColor;
+    ctx.fillStyle=flashColor;
     ctx.fillRect(0,0,canvas.width,canvas.height);
     flashTimer -= dt;
-    if(flashTimer<0) flashTimer=0;
+    if(flashTimer<0){
+      flashTimer=0;
+      flashMsg="";
+    }
   }
 }
 
 /*
-  ============================
-  LOOP PRINCIPAL
-  ============================
+=====================================================
+SALIDA / FIN DE NIVEL
+Si el jugador llega a la puerta (celda 4) y ya tiene Núcleo Rojo → gana
+=====================================================
+*/
+let levelFinished = false;
+function checkExit(){
+  const cx = Math.floor(px);
+  const cy = Math.floor(py);
+  if(cx===exitCell.x && cy===exitCell.y){
+    if(hasCore){
+      levelFinished = true;
+    } else {
+      // mensaje de "NECESITAS NÚCLEO ROJO"
+      flashMiss("NECESITAS EL NÚCLEO ROJO");
+    }
+  }
+}
+
+/*
+=====================================================
+HUD VIDA y ESTADO MUERTO / GANASTE
+=====================================================
+*/
+function updateHUD(){
+  const hp = Math.max(0,Math.floor(playerHP));
+  healthBarFill.style.width = (hp/playerMaxHP*100)+"%";
+  // color escala según vida
+  const ratio = hp/playerMaxHP;
+  const r = (ratio<0.5)?255:Math.floor(255*(1-ratio)*2);
+  const g = (ratio>0.5)?255:Math.floor(255*(ratio)*2);
+  healthBarFill.style.background =
+    `linear-gradient(rgb(${r},${g},0), rgb(${Math.floor(r*0.6)},${Math.floor(g*0.6)},0))`;
+
+  healthText.textContent = `VIDA ${hp}/${playerMaxHP}`;
+
+  if(playerHP<=0){
+    centerText.textContent = "HAS MUERTO\nRecarga la página para reiniciar";
+  } else if(levelFinished){
+    centerText.textContent = "NIVEL COMPLETADO\n¡EXFIL EXITOSA!";
+  }
+}
+
+/*
+=====================================================
+GAME LOOP
+=====================================================
 */
 let lastT = performance.now();
 function gameLoop(now){
-  const dt = (now - lastT)/1000;
-  lastT = now;
+  const dt = (now-lastT)/1000;
+  lastT=now;
 
-  updatePlayer(dt);
+  if(playerHP>0 && !levelFinished){
+    updatePlayer(dt);
 
-  // Cooldown disparo
-  if(shootCooldown>0){
-    shootCooldown -= dt;
-    if(shootCooldown<0){
-      shootCooldown=0;
-      shooting=false;
+    // cooldown disparo
+    if(shootCooldown>0){
+      shootCooldown-=dt;
+      if(shootCooldown<0){
+        shootCooldown=0;
+        shooting=false;
+      }
     }
+
+    // RENDER
+    renderWorld();
+    renderEnemies(dt);
+    renderPickups();
+    renderGun(dt);
+    renderFlash(dt);
+
+    checkExit();
+  } else {
+    // juego congelado pero seguimos dibujando escena final
+    renderWorld();
+    renderEnemies(0);
+    renderPickups();
+    renderGun(0);
+    renderFlash(0);
   }
 
-  // RENDER
-  renderWorld();
-  renderEnemies();
-  renderGun(dt);
-  renderFlash(dt);
-
-  // Debug info
+  // debug
   debugEl.textContent =
-    `x:${px.toFixed(2)} y:${py.toFixed(2)} ang:${(pAngle).toFixed(2)} ` +
-    `enemies:${enemies.filter(e=>e.alive).length} vivos`;
+    `pos(${px.toFixed(2)},${py.toFixed(2)}) ang:${pAngle.toFixed(2)} `+
+    `HP:${playerHP.toFixed(0)} core:${hasCore} `+
+    `enemigos:${enemies.filter(e=>e.alive).length} vivos`;
+
+  updateHUD();
 
   requestAnimationFrame(gameLoop);
 }
 
 /*
-  ============================
-  INICIO DEL JUEGO
-  ============================
+=====================================================
+INICIO
+=====================================================
 */
 startBtn.addEventListener('click', ()=>{
-  // ocultar overlay
-  startOverlay.style.display = 'none';
-  centerText.textContent = "Click para capturar mouse";
+  startOverlay.style.display='none';
+  centerText.textContent="Click para capturar mouse";
   lockPointer();
-  lastT = performance.now();
+  lastT=performance.now();
   requestAnimationFrame(gameLoop);
 });
 
