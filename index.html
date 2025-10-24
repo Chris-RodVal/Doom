@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>FPS DEMO - Laboratorio Nivel 1</title>
+<title>FPS DEMO Optimizado - Laboratorio Nivel 1</title>
 <style>
   html, body {
     margin: 0;
@@ -13,10 +13,12 @@
     overflow: hidden;
   }
 
-  #gameCanvas {
-    display: block;
+  #view {
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
     width: 100vw;
     height: 100vh;
+    display: block;
     background: #000;
   }
 
@@ -42,6 +44,7 @@
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
+    align-items: center;
   }
 
   #healthBarContainer {
@@ -81,20 +84,6 @@
     color: #666;
   }
 
-  #centerText {
-    position: fixed;
-    top: 50%;
-    left: 50%;
-    translate: -50% -50%;
-    color: rgba(255,255,255,0.8);
-    font-family: monospace;
-    font-size: 14px;
-    text-align: center;
-    text-shadow: 0 0 4px #000;
-    user-select: none;
-    pointer-events: none;
-  }
-
   #crosshair {
     position: fixed;
     left: 50%;
@@ -105,7 +94,6 @@
     pointer-events: none;
     user-select: none;
   }
-
   #crosshair:before,
   #crosshair:after {
     content: '';
@@ -125,6 +113,21 @@
     height: 2px;
     width: 100%;
     translate: 0 -50%;
+  }
+
+  #centerText {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    color: rgba(255,255,255,0.8);
+    font-family: monospace;
+    font-size: 14px;
+    text-align: center;
+    text-shadow: 0 0 4px #000;
+    user-select: none;
+    pointer-events: none;
+    white-space: pre-line;
   }
 
   #startOverlay {
@@ -165,14 +168,15 @@
 </head>
 <body>
 
-<canvas id="gameCanvas" width="800" height="450"></canvas>
+<!-- Importante: en vez de dibujar en pantalla completa directo,
+     usamos un canvas interno low-res y lo pintamos como imagen. -->
+<canvas id="internal" width="320" height="180" style="display:none;"></canvas>
+<canvas id="view"></canvas>
 
 <div id="ui">
-  <div id="statsRow" style="align-items:center;">
+  <div id="statsRow">
     <div style="display:flex;align-items:center;gap:4px;">
-      <div id="healthBarContainer">
-        <div id="healthBarFill"></div>
-      </div>
+      <div id="healthBarContainer"><div id="healthBarFill"></div></div>
       <div id="healthText">VIDA 100/100</div>
     </div>
     <div style="font-size:11px;color:#aaa;text-shadow:0 0 4px #000;">
@@ -188,8 +192,8 @@
   <div id="debug"></div>
 </div>
 
-<div id="centerText"></div>
 <div id="crosshair"></div>
+<div id="centerText"></div>
 
 <div id="startOverlay">
   <div style="max-width:340px;">
@@ -197,10 +201,10 @@
       NIVEL 1: LABORATORIO ABANDONADO
     </h1>
     <p style="margin:0 0 16px;font-size:14px;line-height:1.4;color:#ccc;font-family:monospace;">
-      Aislado bajo tierra. La instalación colapsó después del experimento del Núcleo Rojo.<br><br>
+      La instalación colapsó tras el experimento del Núcleo Rojo.<br><br>
       Tarea:<br>
       1) Encuentra el Núcleo Rojo.<br>
-      2) Sobrevive a los mutantes.<br>
+      2) Sobrevive a la seguridad humana corrompida.<br>
       3) Llega a la puerta de extracción.<br><br>
       Haz click en INICIAR y acepta capturar el mouse.
     </p>
@@ -212,47 +216,41 @@
 </div>
 
 <script>
-/*
-=====================================================
-CONFIG BÁSICA
-=====================================================
-*/
-const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+/* =====================================================
+   SETUP CANVAS
+   - internalCtx = render en baja resolución (320x180)
+   - viewCtx = escalado al canvas visible full screen
+===================================================== */
+const lowCanvas = document.getElementById('internal');
+const lowCtx = lowCanvas.getContext('2d');
+const viewCanvas = document.getElementById('view');
+const viewCtx = viewCanvas.getContext('2d');
 
-function resizeCanvas() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+function resizeView() {
+  viewCanvas.width = window.innerWidth;
+  viewCanvas.height = window.innerHeight;
 }
-resizeCanvas();
-window.addEventListener('resize', resizeCanvas);
+resizeView();
+window.addEventListener('resize', resizeView);
 
-const debugEl = document.getElementById('debug');
+/* =====================================================
+   DOM
+===================================================== */
+const centerText = document.getElementById('centerText');
 const startOverlay = document.getElementById('startOverlay');
 const startBtn = document.getElementById('startBtn');
-const centerText = document.getElementById('centerText');
 const missionTextEl = document.getElementById('missionText');
+const debugEl = document.getElementById('debug');
 const healthBarFill = document.getElementById('healthBarFill');
 const healthText = document.getElementById('healthText');
 
 let mouseLocked = false;
 
-/*
-=====================================================
-MAPA Y PAREDES
-Tipos de pared:
-1 = metal rojo industrial
-2 = metal gris / laboratorio
-3 = panel tóxico verde
-4 = puerta de salida (cerrada hasta tener núcleo)
-0 = vacío
-=====================================================
-Mapa grande tipo lab subterráneo (20x20 aprox)
-Incluimos pasillos, cámara central (núcleo rojo),
-zona de extracción con puerta (4).
-*/
+/* =====================================================
+   MUNDO / MAPA
+   Paredes con tipos (1,2,3,4) para texturas simples
+===================================================== */
 const worldMap = [
- //0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,2,2,2,0,0,0,0,0,0,0,3,3,3,0,0,0,0,1],
@@ -269,106 +267,86 @@ const worldMap = [
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,4,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
 ];
-const mapWidth = worldMap[0].length;
-const mapHeight = worldMap.length;
+const mapW = worldMap[0].length;
+const mapH = worldMap.length;
 
-/*
-=====================================================
-PLAYER ESTADO
-=====================================================
-*/
+/* =====================================================
+   PLAYER
+===================================================== */
 let px = 2.5;
 let py = 2.5;
 let pAngle = 0;
 
-const FOV = Math.PI / 3; // ~60°
-const moveSpeed = 3.0;   // unidades/seg
-const rotSpeed = 2.5;    // rad/seg con flechas
-let shootCooldown = 0;
-let shooting = false;
+const FOV = Math.PI/3;  // 60°
+const moveSpeed = 3.0;
+const rotSpeed = 2.5;
 
 let playerHP = 100;
 const playerMaxHP = 100;
-const regenPerSec = 2; // regeneración lenta
-let hasCore = false;   // recogiste el Núcleo Rojo?
+const regenPerSec = 2;
 
-/*
-=====================================================
-INPUT
-=====================================================
-*/
-const keys = {
-  w:false,a:false,s:false,d:false,
-  left:false,right:false
-};
+let shooting = false;
+let shootCooldown = 0;
+
+let hasCore = false;
+let levelFinished = false;
+
+/* =====================================================
+   INPUT
+===================================================== */
+const keys = {w:false,a:false,s:false,d:false,left:false,right:false};
 
 document.addEventListener('keydown', e=>{
-  switch(e.code){
-    case 'KeyW': keys.w=true; break;
-    case 'KeyA': keys.a=true; break;
-    case 'KeyS': keys.s=true; break;
-    case 'KeyD': keys.d=true; break;
-    case 'ArrowLeft': keys.left=true; break;
-    case 'ArrowRight': keys.right=true; break;
-  }
+  if(e.code==="KeyW") keys.w=true;
+  if(e.code==="KeyA") keys.a=true;
+  if(e.code==="KeyS") keys.s=true;
+  if(e.code==="KeyD") keys.d=true;
+  if(e.code==="ArrowLeft") keys.left=true;
+  if(e.code==="ArrowRight") keys.right=true;
 });
 document.addEventListener('keyup', e=>{
-  switch(e.code){
-    case 'KeyW': keys.w=false; break;
-    case 'KeyA': keys.a=false; break;
-    case 'KeyS': keys.s=false; break;
-    case 'KeyD': keys.d=false; break;
-    case 'ArrowLeft': keys.left=false; break;
-    case 'ArrowRight': keys.right=false; break;
-  }
+  if(e.code==="KeyW") keys.w=false;
+  if(e.code==="KeyA") keys.a=false;
+  if(e.code==="KeyS") keys.s=false;
+  if(e.code==="KeyD") keys.d=false;
+  if(e.code==="ArrowLeft") keys.left=false;
+  if(e.code==="ArrowRight") keys.right=false;
 });
 
 function lockPointer(){
-  canvas.requestPointerLock = canvas.requestPointerLock||
-                              canvas.mozRequestPointerLock;
-  canvas.requestPointerLock();
+  viewCanvas.requestPointerLock = viewCanvas.requestPointerLock || viewCanvas.mozRequestPointerLock;
+  viewCanvas.requestPointerLock();
 }
-
 document.addEventListener('pointerlockchange', ()=>{
-  mouseLocked = (document.pointerLockElement === canvas);
-  if(mouseLocked){
-    centerText.textContent = "";
-  } else {
-    centerText.textContent = "Click para capturar mouse";
-  }
+  mouseLocked = (document.pointerLockElement === viewCanvas);
+  centerText.textContent = mouseLocked ? "" : "Click para capturar mouse";
 });
-
 document.addEventListener('mousemove', e=>{
   if(mouseLocked){
     const sensitivity = 0.0025;
     pAngle += e.movementX * sensitivity;
   }
 });
-
-canvas.addEventListener('mousedown', ()=>{
+viewCanvas.addEventListener('mousedown', ()=>{
   if(mouseLocked){
     if(shootCooldown<=0){
       shooting = true;
       shootCooldown = 0.25;
-      tryHitEnemy();
+      shootEnemy();
     }
   } else {
     lockPointer();
   }
 });
 
-/*
-=====================================================
-TEXTURAS OFFSCREEN
-Creamos 4 texturas 64x64 para paredes
-+ sprites para enemigos y pickups
-=====================================================
-*/
+/* =====================================================
+   TEXTURAS PARED
+===================================================== */
 function makeWallTexture(patternFn){
   const c = document.createElement('canvas');
   c.width = 64; c.height = 64;
@@ -378,7 +356,7 @@ function makeWallTexture(patternFn){
   for(let y=0;y<64;y++){
     for(let x=0;x<64;x++){
       const idx=(y*64+x)*4;
-      const col = patternFn(x,y); // {r,g,b}
+      const col=patternFn(x,y);
       d[idx+0]=col.r;
       d[idx+1]=col.g;
       d[idx+2]=col.b;
@@ -388,249 +366,260 @@ function makeWallTexture(patternFn){
   cx.putImageData(imgData,0,0);
   return c;
 }
-
-// pared 1: metal rojo oscuro con paneles
+// rojo metálico
 const wallTex1 = makeWallTexture((x,y)=>{
-  const stripe = (x%16<2||y%16<2)? 80:0;
+  const stripe=(x%16<2||y%16<2)?80:0;
   return {r:150+stripe,g:20+stripe*0.2,b:20+stripe*0.2};
 });
-
-// pared 2: gris laboratorio con líneas
+// gris laboratorio
 const wallTex2 = makeWallTexture((x,y)=>{
-  const grid = ((x%8===0)||(y%8===0))?200:140;
+  const grid=((x%8===0)||(y%8===0))?200:140;
   return {r:grid,g:grid,b:grid+10};
 });
-
-// pared 3: tóxico verde brillante
+// tóxico verde
 const wallTex3 = makeWallTexture((x,y)=>{
-  const noise = ((x*y)%13)*10;
-  const baseG = 180+ (noise%40);
+  const noise=((x*y)%13)*10;
+  const baseG=180+(noise%40);
   return {r:20,g:baseG,b:20};
 });
-
-// pared 4: puerta de extracción (al principio bloqueada)
+// puerta salida
 const wallTex4 = makeWallTexture((x,y)=>{
-  // como puerta metálica amarilla/negra, franjas
-  const stripe = ( ( (x+y) %16)<8 );
-  if(stripe){
-    return {r:230,g:210,b:40};
-  } else {
-    return {r:30,g:30,b:30};
-  }
+  const stripe = (((x+y)%16)<8);
+  if(stripe){ return {r:230,g:210,b:40}; }
+  return {r:30,g:30,b:30};
 });
+const wallTextures = {1:wallTex1,2:wallTex2,3:wallTex3,4:wallTex4};
 
-const wallTextures = {
-  1: wallTex1,
-  2: wallTex2,
-  3: wallTex3,
-  4: wallTex4
-};
-
-// Sprites enemigo tipo soldado
-function makeEnemyTexture(colorBody,colorFace){
+/* =====================================================
+   ENEMIGOS HUMANOS
+   - sprite con cabeza/brazos/piernas
+   - caminan hacia ti si te ven
+   - tienen HP
+===================================================== */
+function makeHumanSprite(baseColorSkin, baseColorSuit){
   const c = document.createElement('canvas');
-  c.width=32; c.height=48;
-  const cx = c.getContext('2d');
+  c.width=24; c.height=40;
+  const cx=c.getContext('2d');
 
-  // cuerpo
-  cx.fillStyle = colorBody;
-  cx.fillRect(0,8,32,40);
+  // piernas
+  cx.fillStyle=baseColorSuit;
+  cx.fillRect(8,28,8,12); // piernas juntas
+
+  // torso
+  cx.fillStyle=baseColorSuit;
+  cx.fillRect(4,14,16,16);
+
+  // brazos
+  cx.fillStyle=baseColorSkin;
+  cx.fillRect(0,16,4,12);  // brazo izq
+  cx.fillRect(20,16,4,12); // brazo der
 
   // cabeza
-  cx.fillStyle = colorFace;
-  cx.fillRect(8,0,16,16);
+  cx.fillStyle=baseColorSkin;
+  cx.fillRect(7,4,10,10);
 
-  // ojos
+  // cara (ojos)
   cx.fillStyle="#000";
-  cx.fillRect(12,6,3,3);
-  cx.fillRect(17,6,3,3);
+  cx.fillRect(9,8,2,2);
+  cx.fillRect(13,8,2,2);
 
-  // borde
+  // contorno
   cx.strokeStyle="#000";
   cx.lineWidth=2;
-  cx.strokeRect(0,8,32,40);
-  cx.strokeRect(8,0,16,16);
+  cx.strokeRect(4,14,16,16);
+  cx.strokeRect(7,4,10,10);
 
   return c;
 }
 
-// 3 tipos de enemigo
-const ENEMY_TYPES = {
-  SOLDIER: {
-    name:"Soldado",
-    dmgPerSec:10,
-    range:2.5,
-    texture: makeEnemyTexture("#555","#ffe0c0")
-  },
-  MUTANT: {
-    name:"Mutante",
-    dmgPerSec:20,
-    range:2.0,
-    texture: makeEnemyTexture("#0a0","#c0ffb0")
-  },
-  DEMON: {
-    name:"Demonio",
-    dmgPerSec:35,
-    range:1.6,
-    texture: makeEnemyTexture("#800","#ffb0b0")
-  }
+const ENEMY_ARCHETYPE = {
+  speed: 1.5,        // m/s
+  dmgPerSec: 15,     // daño si está cerca
+  range: 1.3,        // distancia para golpear
+  maxHP: 60,
+  textureIdle: makeHumanSprite("#ffe0c0","#444"),
+  textureWalk: makeHumanSprite("#ffe0c0","#666"),
 };
 
-// Sprite pickup medkit
+// enemigos en el mapa
+const enemies = [
+  {x:6.5,y:3.5,hp:60,alive:true,walkPhase:0},
+  {x:12.5,y:2.5,hp:60,alive:true,walkPhase:0},
+  {x:14.5,y:3.5,hp:60,alive:true,walkPhase:0},
+  {x:10.5,y:14.5,hp:60,alive:true,walkPhase:0},
+  {x:16.5,y:16.0,hp:60,alive:true,walkPhase:0},
+];
+
+/* =====================================================
+   PICKUPS
+===================================================== */
 function makeMedkitTexture(){
-  const c = document.createElement('canvas');
-  c.width=24;c.height=24;
+  const c=document.createElement('canvas');
+  c.width=20; c.height=20;
   const cx=c.getContext('2d');
   cx.fillStyle="#fff";
-  cx.fillRect(0,0,24,24);
+  cx.fillRect(0,0,20,20);
   cx.fillStyle="#c00";
-  cx.fillRect(10,4,4,16);
-  cx.fillRect(4,10,16,4);
+  cx.fillRect(8,2,4,16);
+  cx.fillRect(2,8,16,4);
   cx.strokeStyle="#000";
   cx.lineWidth=2;
-  cx.strokeRect(0,0,24,24);
+  cx.strokeRect(0,0,20,20);
   return c;
 }
-const medkitTex = makeMedkitTexture();
-
-// Sprite pickup Núcleo Rojo
 function makeCoreTexture(){
-  const c = document.createElement('canvas');
-  c.width=24;c.height=24;
+  const c=document.createElement('canvas');
+  c.width=20;c.height=20;
   const cx=c.getContext('2d');
   cx.fillStyle="#400";
-  cx.fillRect(0,0,24,24);
+  cx.fillRect(0,0,20,20);
   cx.fillStyle="#f00";
   cx.beginPath();
-  cx.arc(12,12,8,0,Math.PI*2);
+  cx.arc(10,10,6,0,Math.PI*2);
   cx.fill();
   cx.strokeStyle="#000";
   cx.lineWidth=2;
-  cx.strokeRect(0,0,24,24);
+  cx.strokeRect(0,0,20,20);
   cx.strokeStyle="#900";
   cx.lineWidth=2;
   cx.stroke();
   return c;
 }
+const medkitTex = makeMedkitTexture();
 const coreTex = makeCoreTexture();
 
-/*
-=====================================================
-ENEMIGOS Y PICKUPS EN EL NIVEL
-=====================================================
-*/
-const enemies = [
-  {x:5.5,y:2.5, type:ENEMY_TYPES.SOLDIER, alive:true },
-  {x:7.5,y:3.5, type:ENEMY_TYPES.MUTANT , alive:true },
-  {x:12.5,y:2.5,type:ENEMY_TYPES.SOLDIER, alive:true },
-  {x:14.5,y:3.5,type:ENEMY_TYPES.DEMON  , alive:true },
-  {x:10.5,y:14.5,type:ENEMY_TYPES.MUTANT, alive:true },
-  {x:16.5,y:16.0,type:ENEMY_TYPES.DEMON , alive:true },
-];
-
 const pickups = [
-  // Medkits
   {x:4.5,y:5.5, kind:"medkit", taken:false},
   {x:10.5,y:10.5, kind:"medkit", taken:false},
   {x:15.5,y:15.5, kind:"medkit", taken:false},
-  // Núcleo Rojo (key item, sólo uno)
   {x:12.5,y:13.5, kind:"core", taken:false},
 ];
 
-// Para puerta de salida: está en (18,16). Es celda 4 en mapa.
-// Sólo se podrá "terminar" si hasCore = true y llegas cerca.
-const exitCell = {x:18,y:16};
+const exitCell = {x:18,y:18-2}; // (18,16)
 
-/*
-=====================================================
-MOVIMIENTO DEL JUGADOR (colisiones)
-=====================================================
-*/
-function cellIsWall(x, y) {
-  const cell = worldMap[y]?.[x] ?? 1;
-  return cell!==0;
+/* =====================================================
+   UTILIDADES
+===================================================== */
+function cellBlocked(x,y){
+  const c = worldMap[y]?.[x];
+  return (c===undefined || c===null || c!==0);
+}
+function lineOfSight(ax,ay,bx,by){
+  // raycast simple entre A y B
+  const dx=bx-ax, dy=by-ay;
+  const dist=Math.hypot(dx,dy);
+  const steps = Math.ceil(dist*10); // muestras
+  for(let i=1;i<=steps;i++){
+    const t=i/steps;
+    const rx=ax+dx*t;
+    const ry=ay+dy*t;
+    const mx=Math.floor(rx);
+    const my=Math.floor(ry);
+    if(cellBlocked(mx,my) && !(mx===Math.floor(bx)&&my===Math.floor(by))){
+      return false;
+    }
+  }
+  return true;
 }
 
-function tryMove(nx, ny){
-  // checa paredes
-  if(!cellIsWall(Math.floor(nx),Math.floor(ny))){
-    px = nx;
-    py = ny;
+/* =====================================================
+   MOVIMIENTO PLAYER
+===================================================== */
+function tryMove(nx,ny){
+  if(!cellBlocked(Math.floor(nx),Math.floor(ny))){
+    px=nx;py=ny;
   }
 }
-
 function updatePlayer(dt){
   if(keys.left)  pAngle -= rotSpeed*dt;
   if(keys.right) pAngle += rotSpeed*dt;
 
-  const forwardX = Math.cos(pAngle);
-  const forwardY = Math.sin(pAngle);
-  const rightX = Math.cos(pAngle + Math.PI/2);
-  const rightY = Math.sin(pAngle + Math.PI/2);
+  const fx=Math.cos(pAngle), fy=Math.sin(pAngle);
+  const rx=Math.cos(pAngle+Math.PI/2), ry=Math.sin(pAngle+Math.PI/2);
 
-  let movX = 0;
-  let movY = 0;
+  let mx=0,my=0;
+  if(keys.w){mx+=fx;my+=fy;}
+  if(keys.s){mx-=fx;my-=fy;}
+  if(keys.a){mx-=rx;my-=ry;}
+  if(keys.d){mx+=rx;my+=ry;}
 
-  if(keys.w){ movX += forwardX; movY += forwardY; }
-  if(keys.s){ movX -= forwardX; movY -= forwardY; }
-  if(keys.a){ movX -= rightX;   movY -= rightY;   }
-  if(keys.d){ movX += rightX;   movY += rightY;   }
-
-  const len = Math.hypot(movX,movY);
-  if(len>0){
-    movX/=len; movY/=len;
-    tryMove(px + movX * moveSpeed * dt,
-            py + movY * moveSpeed * dt);
+  const L=Math.hypot(mx,my);
+  if(L>0){
+    mx/=L;my/=L;
+    tryMove(px+mx*moveSpeed*dt, py+my*moveSpeed*dt);
   }
 
-  // regen lenta
+  // regeneración lenta
   if(playerHP>0 && playerHP<playerMaxHP){
-    playerHP += regenPerSec * dt;
-    if(playerHP>playerMaxHP) playerHP = playerMaxHP;
+    playerHP += regenPerSec*dt;
+    if(playerHP>playerMaxHP) playerHP=playerMaxHP;
   }
 }
 
-/*
-=====================================================
-RAYCASTING MEJORADO CON TEXTURAS
-=====================================================
-Devolvemos:
-- dist
-- side
-- mapX,mapY
-- wallType
-- texX (coordenada x en la textura 0..63)
-*/
+/* =====================================================
+   IA ENEMIGOS
+   - Si te ven, caminan hacia ti.
+   - Golpean si están cerca.
+===================================================== */
+function updateEnemies(dt){
+  for(const e of enemies){
+    if(!e.alive) continue;
+    // ver jugador
+    const canSee = lineOfSight(e.x,e.y,px,py);
+
+    // mover hacia jugador si puede verte
+    if(canSee){
+      // dirección hacia jugador
+      const dx=px-e.x;
+      const dy=py-e.y;
+      const dist=Math.hypot(dx,dy);
+      if(dist>0.1){
+        const dirx=dx/dist;
+        const diry=dy/dist;
+        // intentar mover
+        const step = ENEMY_ARCHETYPE.speed*dt;
+        const nx = e.x+dirx*step;
+        const ny = e.y+diry*step;
+        if(!cellBlocked(Math.floor(nx),Math.floor(ny))){
+          e.x=nx;
+          e.y=ny;
+          e.walkPhase += dt*10; // anim caminar
+        }
+      }
+
+      // daño si muy cerca
+      if(dist < ENEMY_ARCHETYPE.range){
+        playerHP -= ENEMY_ARCHETYPE.dmgPerSec * dt;
+        if(playerHP<0) playerHP=0;
+      }
+    }
+  }
+}
+
+/* =====================================================
+   RAYCAST + RENDER 3D EN LOW-RES
+===================================================== */
 function castRay(rayAngle){
-  const rayDirX = Math.cos(rayAngle);
-  const rayDirY = Math.sin(rayAngle);
+  const dirX=Math.cos(rayAngle);
+  const dirY=Math.sin(rayAngle);
+  let mapX=Math.floor(px);
+  let mapY=Math.floor(py);
 
-  let mapX = Math.floor(px);
-  let mapY = Math.floor(py);
+  const deltaDistX=(dirX===0)?1e30:Math.abs(1/dirX);
+  const deltaDistY=(dirY===0)?1e30:Math.abs(1/dirY);
 
-  const deltaDistX = (rayDirX===0)?1e30:Math.abs(1/rayDirX);
-  const deltaDistY = (rayDirY===0)?1e30:Math.abs(1/rayDirY);
+  let stepX,sideDistX;
+  let stepY,sideDistY;
 
-  let stepX, sideDistX;
-  let stepY, sideDistY;
+  if(dirX<0){stepX=-1;sideDistX=(px-mapX)*deltaDistX;}
+  else{stepX=1;sideDistX=(mapX+1.0-px)*deltaDistX;}
 
-  if(rayDirX<0){
-    stepX=-1;
-    sideDistX=(px-mapX)*deltaDistX;
-  } else {
-    stepX=1;
-    sideDistX=(mapX+1.0-px)*deltaDistX;
-  }
-  if(rayDirY<0){
-    stepY=-1;
-    sideDistY=(py-mapY)*deltaDistY;
-  } else {
-    stepY=1;
-    sideDistY=(mapY+1.0-py)*deltaDistY;
-  }
+  if(dirY<0){stepY=-1;sideDistY=(py-mapY)*deltaDistY;}
+  else{stepY=1;sideDistY=(mapY+1.0-py)*deltaDistY;}
 
   let hit=0;
   let side=0;
+
   while(hit===0){
     if(sideDistX<sideDistY){
       sideDistX+=deltaDistX;
@@ -641,430 +630,314 @@ function castRay(rayAngle){
       mapY+=stepY;
       side=1;
     }
-    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight){
-      hit=1;
-      break;
-    }
-    if(worldMap[mapY][mapX] !==0){
+    if(mapX<0||mapX>=mapW||mapY<0||mapY>=mapH){hit=1;break;}
+    if(worldMap[mapY][mapX]!==0){
       hit=1;
     }
   }
 
-  let perpWallDist;
-  if(side===0){
-    perpWallDist=(sideDistX-deltaDistX);
-  } else {
-    perpWallDist=(sideDistY-deltaDistY);
-  }
+  let dist;
+  if(side===0) dist=(sideDistX-deltaDistX); else dist=(sideDistY-deltaDistY);
 
-  const wallType = worldMap[mapY]?.[mapX] || 1;
+  let wallType = worldMap[mapY]?.[mapX]||1;
 
-  // Coordenada de impacto en pared para texturizar:
+  // tex coord en X
   let wallX;
-  if(side===0){
-    wallX = py + perpWallDist * rayDirY;
-  } else {
-    wallX = px + perpWallDist * rayDirX;
-  }
+  if(side===0){ wallX = py + dist*dirY; }
+  else{ wallX = px + dist*dirX; }
   wallX -= Math.floor(wallX);
 
-  // texX en 0..63
-  let texX = Math.floor(wallX * 64);
-  // Corrección para caras opuestas
-  if(side===0 && rayDirX>0) texX = 64-texX-1;
-  if(side===1 && rayDirY<0) texX = 64-texX-1;
+  let texX = Math.floor(wallX*64);
+  if(side===0 && dirX>0) texX=64-texX-1;
+  if(side===1 && dirY<0) texX=64-texX-1;
 
-  return {
-    dist: perpWallDist,
-    side,
-    mapX,
-    mapY,
-    wallType,
-    texX
-  };
+  return {dist,side,wallType,texX};
 }
 
-/*
-=====================================================
-RENDER DEL MUNDO CON TEXTURAS
-Guardamos zBuffer por columna para sprites
-=====================================================
-*/
-let zBuffer = [];
+let zBuffer = new Array(lowCanvas.width);
 
 function renderWorld(){
-  const w = canvas.width;
-  const h = canvas.height;
+  const w = lowCanvas.width;
+  const h = lowCanvas.height;
+  const halfH = h/2|0;
 
-  // CIELO
-  const skyGradient = ctx.createLinearGradient(0,0,0,h/2);
-  skyGradient.addColorStop(0,"#111122");
-  skyGradient.addColorStop(1,"#000000");
-  ctx.fillStyle = skyGradient;
-  ctx.fillRect(0,0,w,h/2);
+  // cielo
+  const skyGrad = lowCtx.createLinearGradient(0,0,0,halfH);
+  skyGrad.addColorStop(0,"#111122");
+  skyGrad.addColorStop(1,"#000000");
+  lowCtx.fillStyle=skyGrad;
+  lowCtx.fillRect(0,0,w,halfH);
 
-  // PISO
-  const floorGradient = ctx.createLinearGradient(0,h/2,0,h);
-  floorGradient.addColorStop(0,"#1a1a1a");
-  floorGradient.addColorStop(1,"#000000");
-  ctx.fillStyle = floorGradient;
-  ctx.fillRect(0,h/2,w,h/2);
-
-  // Paredes
-  zBuffer.length = w;
+  // piso
+  const floorGrad = lowCtx.createLinearGradient(0,halfH,0,h);
+  floorGrad.addColorStop(0,"#1a1a1a");
+  floorGrad.addColorStop(1,"#000000");
+  lowCtx.fillStyle=floorGrad;
+  lowCtx.fillRect(0,halfH,w,halfH);
 
   for(let x=0;x<w;x++){
     const cameraX = (2*x/w -1);
-    const rayAngle = pAngle + Math.atan(cameraX * Math.tan(FOV/2));
+    const rayAngle = pAngle + Math.atan(cameraX*Math.tan(FOV/2));
     const ray = castRay(rayAngle);
-    const dist = ray.dist;
-    zBuffer[x] = dist;
 
-    // altura columna
-    const lineH = Math.floor(h / dist);
-    let drawStart = -lineH/2 + h/2;
-    let drawEnd   =  lineH/2 + h/2;
+    zBuffer[x]=ray.dist;
+
+    const lineH = (h/ray.dist)|0;
+    let drawStart = (-lineH/2 + halfH)|0;
+    let drawEnd   = ( lineH/2 + halfH)|0;
     if(drawStart<0) drawStart=0;
-    if(drawEnd>=h)  drawEnd=h-1;
+    if(drawEnd>=h) drawEnd=h-1;
 
-    const tex = wallTextures[ ray.wallType ] || wallTex1;
-    // sombreado según side
-    // sacamos columna texX de tex y la estiramos
-    const texCtx = tex.getContext('2d');
-    const colData = texCtx.getImageData(ray.texX,0,1,64).data;
+    const tex = wallTextures[ray.wallType]||wallTex1;
+    const tctx = tex.getContext('2d');
+    const colData = tctx.getImageData(ray.texX,0,1,64).data;
 
-    for(let y=drawStart;y<drawEnd;y++){
-      // mapeo y pantalla -> y tex
-      const dy = y - h/2 + lineH/2;
-      const texY = Math.floor(dy / lineH * 64);
-      const idx = texY*4;
-      let r = colData[idx+0];
-      let g = colData[idx+1];
-      let b = colData[idx+2];
-
-      // sombra lado
-      if(ray.side===1){
-        r*=0.6; g*=0.6; b*=0.6;
-      }
-      // leve atenuación por distancia
-      const shade = 1/(1+dist*0.1);
-      r*=shade; g*=shade; b*=shade;
-
-      ctx.fillStyle = `rgb(${r|0},${g|0},${b|0})`;
-      ctx.fillRect(x,y,1,1);
+    for(let y=drawStart;y<=drawEnd;y++){
+      const dy = y - halfH + lineH/2;
+      const ty = ( (dy/lineH)*64 )|0;
+      const idx = ty*4;
+      let R=colData[idx+0],
+          G=colData[idx+1],
+          B=colData[idx+2];
+      if(ray.side===1){R*=0.6;G*=0.6;B*=0.6;}
+      const shade = 1/(1+ray.dist*0.1);
+      R=(R*shade)|0;G=(G*shade)|0;B=(B*shade)|0;
+      lowCtx.fillStyle=`rgb(${R},${G},${B})`;
+      lowCtx.fillRect(x,y,1,1);
     }
   }
 }
 
-/*
-=====================================================
-SPRITES: ENEMIGOS, PICKUPS
-- Billboard proyectado.
-- Usamos zBuffer para ocultar si hay pared delante.
-=====================================================
-*/
-function projectSprite(worldX,worldY, texW, texH){
-  const w = canvas.width;
-  const h = canvas.height;
-
-  const dx = worldX - px;
-  const dy = worldY - py;
-  const dist = Math.hypot(dx,dy);
-  const angleTo = Math.atan2(dy,dx);
-
-  let angleDiff = angleTo - pAngle;
-  while(angleDiff < -Math.PI) angleDiff+=2*Math.PI;
-  while(angleDiff >  Math.PI) angleDiff-=2*Math.PI;
-
-  if(Math.abs(angleDiff) > FOV) return null;
-
-  const screenX = (0.5 + (angleDiff / (FOV)) ) * w;
+/* =====================================================
+   PROYECCIÓN SPRITES (enemigos y pickups)
+===================================================== */
+function projectSprite(wx,wy,tw,th){
+  const w = lowCanvas.width;
+  const h = lowCanvas.height;
+  const dx=wx-px, dy=wy-py;
+  const dist=Math.hypot(dx,dy);
+  const ang=Math.atan2(dy,dx);
+  let angDiff=ang-pAngle;
+  while(angDiff<-Math.PI) angDiff+=2*Math.PI;
+  while(angDiff> Math.PI) angDiff-=2*Math.PI;
+  if(Math.abs(angDiff)>FOV) return null;
   if(dist<0.2) return null;
-
-  const spriteH = (h / dist);
-  const spriteW = spriteH * (texW/texH);
-
-  const drawX = screenX - spriteW/2;
-  const drawY = h/2 - spriteH/2;
-
-  return {dist,drawX,drawY,spriteW,spriteH,angleTo};
+  const screenX=(0.5+(angDiff/FOV))*w;
+  const spriteH=(h/dist);
+  const spriteW=spriteH*(tw/th);
+  return {dist,screenX,spriteW,spriteH,ang,wx,wy};
 }
 
-function castOneAngle(angle){
-  return castRay(angle).dist;
-}
+function drawBillboard(tex,proj){
+  const w = lowCanvas.width;
+  const h = lowCanvas.height;
+  const tctx = tex.getContext('2d');
+  const tw=tex.width, th=tex.height;
+  const imgData = tctx.getImageData(0,0,tw,th).data;
 
-function renderSpriteBillboard(tex,drawX,drawY,spriteW,spriteH,dist){
-  const w = canvas.width;
-  const h = canvas.height;
-  const texCtx = tex.getContext('2d');
-  const tw = tex.width;
-  const th = tex.height;
-  const imgData = texCtx.getImageData(0,0,tw,th).data;
+  const startX=(proj.screenX - proj.spriteW/2)|0;
+  const endX=(proj.screenX + proj.spriteW/2)|0;
 
-  const startX = Math.floor(drawX);
-  const endX   = Math.floor(drawX+spriteW);
-  for(let sx=startX;sx<endX;sx++){
+  for(let sx=startX; sx<=endX; sx++){
     if(sx<0||sx>=w) continue;
-    const colRel = (sx - drawX)/spriteW;
-    const texX = Math.floor(colRel * tw);
+    // zBuffer: si está detrás de pared, no se ve
+    if(proj.dist>zBuffer[sx]) continue;
 
-    // checamos profundidad: si sprite está detrás de pared, no dibujar esa columna
-    if(dist > zBuffer[sx]) continue;
+    const u = ( (sx - (proj.screenX-proj.spriteW/2))/proj.spriteW )*tw;
+    const texX = u|0;
+    if(texX<0||texX>=tw) continue;
 
-    const startY = Math.floor(drawY);
-    const endY   = Math.floor(drawY+spriteH);
-    for(let sy=startY;sy<endY;sy++){
+    const startY = ( (h/2 - proj.spriteH/2) )|0;
+    const endY = ( (h/2 + proj.spriteH/2) )|0;
+    for(let sy=startY; sy<=endY; sy++){
       if(sy<0||sy>=h) continue;
-      const rowRel = (sy - drawY)/spriteH;
-      const texY = Math.floor(rowRel * th);
+      const v = ( (sy - (h/2 - proj.spriteH/2))/proj.spriteH )*th;
+      const texY = v|0;
+      if(texY<0||texY>=th) continue;
+
       const idx=(texY*tw+texX)*4;
-      const r=imgData[idx+0];
-      const g=imgData[idx+1];
-      const b=imgData[idx+2];
-      const a=imgData[idx+3];
+      const r=imgData[idx+0],
+            g=imgData[idx+1],
+            b=imgData[idx+2],
+            a=imgData[idx+3];
+      if(a<30) continue;
 
-      if(a<20) continue; // transparencia
-
-      // sombreo distancia
-      const shade = 1/(1+dist*0.2);
+      const shade = 1/(1+proj.dist*0.25);
       const R=(r*shade)|0;
       const G=(g*shade)|0;
       const B=(b*shade)|0;
 
-      ctx.fillStyle=`rgb(${R},${G},${B})`;
-      ctx.fillRect(sx,sy,1,1);
+      lowCtx.fillStyle=`rgb(${R},${G},${B})`;
+      lowCtx.fillRect(sx,sy,1,1);
     }
   }
 }
 
+/* =====================================================
+   RENDER ENEMIGOS / PICKUPS
+===================================================== */
 function renderEnemies(dt){
-  // ordenar lejos->cerca para que el más cercano pinte encima
-  for(const e of enemies){
-    e.dist = Math.hypot(e.x-px, e.y-py);
-  }
-  enemies.sort((a,b)=>b.dist-a.dist);
-
+  // ordenar por distancia desc (para pintar cerca encima de lejos)
+  const list = [];
   for(const e of enemies){
     if(!e.alive) continue;
-    const proj = projectSprite(e.x,e.y,
-      e.type.texture.width,e.type.texture.height);
+    const tex = (Math.sin(e.walkPhase*2)>0)?ENEMY_ARCHETYPE.textureWalk:ENEMY_ARCHETYPE.textureIdle;
+    const proj = projectSprite(e.x,e.y,tex.width,tex.height);
     if(!proj) continue;
 
-    // línea de visión: si pared bloquea, skip
-    const losDist = castOneAngle(proj.angleTo);
-    if(losDist < e.dist-0.05){ // hay pared entremedio
-      continue;
-    }
-
-    // daño al jugador si está cerca
-    if(e.dist < e.type.range){
-      playerHP -= e.type.dmgPerSec * dt;
-      if(playerHP<0) playerHP=0;
-    }
-
-    // dibujar
-    renderSpriteBillboard(
-      e.type.texture,
-      proj.drawX,proj.drawY,
-      proj.spriteW,proj.spriteH,
-      e.dist
-    );
+    // si hay muro entre enemigo y player, igual lo dibujamos (porque igual puede estar detrás pared en visión del player),
+    // pero para IA usamos lineOfSight; para daño ya lo controlamos ahí
+    list.push({proj,tex});
+  }
+  list.sort((A,B)=>B.proj.dist-A.proj.dist);
+  for(const obj of list){
+    drawBillboard(obj.tex,obj.proj);
   }
 }
 
 function renderPickups(){
-  // ordenar igual, lejos->cerca
-  const tmp = [];
+  const list=[];
   for(const p of pickups){
     if(p.taken) continue;
-    const t = (p.kind==="medkit")?medkitTex:coreTex;
-    const proj = projectSprite(p.x,p.y,t.width,t.height);
+    const tex = (p.kind==="medkit")?medkitTex:coreTex;
+    const proj=projectSprite(p.x,p.y,tex.width,tex.height);
     if(!proj) continue;
-    tmp.push({p,tex:t,proj});
+    list.push({proj,tex,p});
   }
-  tmp.sort((A,B)=>B.proj.dist - A.proj.dist);
+  list.sort((A,B)=>B.proj.dist-A.proj.dist);
 
-  for(const obj of tmp){
-    const {p,tex,proj} = obj;
+  for(const obj of list){
+    const {p,proj,tex}=obj;
 
-    // checar si pared bloquea
-    const losDist = castOneAngle(proj.angleTo);
-    if(losDist < proj.dist-0.05) continue;
-
-    // Si el jugador está muy cerca, recoger
-    const dToPlayer = Math.hypot(p.x-px,p.y-py);
-    if(dToPlayer<1.0){
+    // pickup si muy cerca
+    const dist=Math.hypot(p.x-px,p.y-py);
+    if(dist<1.0){
       if(p.kind==="medkit"){
-        // curar
         playerHP += 30;
         if(playerHP>playerMaxHP) playerHP=playerMaxHP;
         p.taken=true;
-        flashPickup("BOTIQUÍN +30HP");
+        flashMsg("BOTIQUÍN +30HP");
       } else if(p.kind==="core"){
         hasCore=true;
         p.taken=true;
         missionTextEl.innerHTML =
           "NIVEL 1 · Laboratorio Abandonado<br>" +
           "Objetivo: Dirígete a la <b>PUERTA DE EXTRACCIÓN</b> al sur.";
-        flashPickup("NÚCLEO ROJO ADQUIRIDO");
+        flashMsg("NÚCLEO ROJO ADQUIRIDO");
       }
     }
 
-    // dibujar pickup sprite
-    renderSpriteBillboard(
-      tex,
-      proj.drawX,proj.drawY,
-      proj.spriteW,proj.spriteH,
-      proj.dist
-    );
+    drawBillboard(tex,proj);
   }
 }
 
-/*
-=====================================================
-DISPARO
-Buscamos el enemigo alineado con la mira (angleDiff chico),
-sin pared entre medio, dañamos y lo matamos de una.
-=====================================================
-*/
-function tryHitEnemy(){
-  const aimTolerance = 0.05; // ~3°
+/* =====================================================
+   DISPARO
+   - Busca enemigo alineado con la mira
+   - Aplica daño (ya no muere de 1 tiro)
+===================================================== */
+function shootEnemy(){
+  const aimTolerance = 0.05;
   let best=null;
   for(const e of enemies){
     if(!e.alive) continue;
-    const dx = e.x-px;
-    const dy = e.y-py;
-    const ang = Math.atan2(dy,dx);
-    let diff = ang-pAngle;
+    const dx=e.x-px, dy=e.y-py;
+    const ang=Math.atan2(dy,dx);
+    let diff=ang-pAngle;
     while(diff<-Math.PI) diff+=2*Math.PI;
     while(diff> Math.PI) diff-=2*Math.PI;
-
     if(Math.abs(diff)<aimTolerance){
-      const d = Math.hypot(dx,dy);
-      const r = castRay(ang);
-      if(r.dist + 0.01 >= d){
-        if(!best || d<best.d){
-          best={enemy:e,d};
-        }
+      const d=Math.hypot(dx,dy);
+      const ray=castRay(ang);
+      if(ray.dist+0.01>=d){
+        if(!best||d<best.d) best={e,d};
       }
     }
   }
-
   if(best){
-    best.enemy.alive=false;
-    flashHit("ENEMIGO ELIMINADO");
+    best.e.hp-=30;
+    flashMsg("IMPACTO");
+    if(best.e.hp<=0){
+      best.e.alive=false;
+      flashMsg("ENEMIGO ABATIDO");
+    }
   } else {
-    flashMiss("FALLO");
+    flashMsg("FALLO");
   }
 }
 
-/*
-=====================================================
-FLASH / HUD TEMPORAL
-=====================================================
-*/
-let flashTimer = 0;
-let flashColor = "rgba(255,255,255,0.4)";
-let flashMsg = "";
-
-function flashHit(msg){
-  flashColor="rgba(0,255,0,0.25)";
-  flashTimer=0.12;
-  flashMsg = msg;
-}
-function flashMiss(msg){
-  flashColor="rgba(255,0,0,0.25)";
-  flashTimer=0.12;
-  flashMsg = msg;
-}
-function flashPickup(msg){
-  flashColor="rgba(255,255,0,0.25)";
-  flashTimer=0.5;
-  flashMsg = msg;
+/* =====================================================
+   FLASH / HUD MESSAGES
+===================================================== */
+let msgTimer=0;
+let msgText="";
+function flashMsg(t){
+  msgText=t;
+  msgTimer=0.6;
 }
 
 function renderGun(dt){
-  const w = canvas.width;
-  const h = canvas.height;
-  const gunW = w*0.25;
-  const gunH = h*0.35;
+  // arma en lowres: un bloque gris abajo
+  const w=lowCanvas.width, h=lowCanvas.height;
+  const gunW=w*0.3;
+  const gunH=h*0.3;
+  const x=w*0.5-gunW/2;
+  const y=h-gunH;
+  const recoil = shooting?2:0;
 
-  let recoilY=0;
-  if(shooting){ recoilY=10; }
+  lowCtx.fillStyle="#444";
+  lowCtx.fillRect(x,y+recoil,gunW,gunH);
 
-  const x = w*0.5 - gunW*0.5;
-  const y = h - gunH + recoilY;
+  lowCtx.fillStyle="#777";
+  lowCtx.fillRect(x+gunW*0.1,y+gunH*0.4+recoil,gunW*0.8,gunH*0.5);
 
-  // cuerpo arma
-  ctx.fillStyle="#444";
-  ctx.fillRect(x,y,gunW,gunH);
+  lowCtx.fillStyle="#222";
+  lowCtx.fillRect(x+gunW*0.4,y+gunH*0.1+recoil,gunW*0.2,gunH*0.3);
 
-  ctx.fillStyle="#777";
-  ctx.fillRect(x+gunW*0.1,y+gunH*0.4,gunW*0.8,gunH*0.5);
-
-  ctx.fillStyle="#222";
-  ctx.fillRect(x+gunW*0.4,y+gunH*0.1,gunW*0.2,gunH*0.3);
-
-  // mensaje flash HUD
-  if(flashTimer>0 && flashMsg){
-    ctx.font="bold 16px monospace";
-    ctx.textAlign="center";
-    ctx.fillStyle="#fff";
-    ctx.shadowColor="#000";
-    ctx.shadowBlur=10;
-    ctx.fillText(flashMsg, w/2, h*0.6);
-    ctx.shadowBlur=0;
+  if(msgTimer>0){
+    lowCtx.font="bold 8px monospace";
+    lowCtx.fillStyle="#fff";
+    lowCtx.textAlign="center";
+    lowCtx.fillText(msgText,w/2,h*0.6);
   }
 }
 
 function renderFlash(dt){
-  if(flashTimer>0){
-    ctx.fillStyle=flashColor;
-    ctx.fillRect(0,0,canvas.width,canvas.height);
-    flashTimer -= dt;
-    if(flashTimer<0){
-      flashTimer=0;
-      flashMsg="";
-    }
+  if(msgTimer>0){
+    msgTimer-=dt;
+    if(msgTimer<0) msgTimer=0;
+  }
+  if(shootCooldown>0){
+    shooting=false;
   }
 }
 
-/*
-=====================================================
-SALIDA / FIN DE NIVEL
-Si el jugador llega a la puerta (celda 4) y ya tiene Núcleo Rojo → gana
-=====================================================
-*/
-let levelFinished = false;
+/* =====================================================
+   SALIDA DEL NIVEL
+===================================================== */
 function checkExit(){
-  const cx = Math.floor(px);
-  const cy = Math.floor(py);
+  const cx=Math.floor(px);
+  const cy=Math.floor(py);
   if(cx===exitCell.x && cy===exitCell.y){
     if(hasCore){
-      levelFinished = true;
+      levelFinished=true;
     } else {
-      // mensaje de "NECESITAS NÚCLEO ROJO"
-      flashMiss("NECESITAS EL NÚCLEO ROJO");
+      flashMsg("NECESITAS EL NÚCLEO ROJO");
     }
   }
 }
 
-/*
-=====================================================
-HUD VIDA y ESTADO MUERTO / GANASTE
-=====================================================
-*/
+/* =====================================================
+   HUD VIDA / ESTADO
+===================================================== */
 function updateHUD(){
-  const hp = Math.max(0,Math.floor(playerHP));
-  healthBarFill.style.width = (hp/playerMaxHP*100)+"%";
-  // color escala según vida
+  const hp=Math.max(0,Math.floor(playerHP));
   const ratio = hp/playerMaxHP;
-  const r = (ratio<0.5)?255:Math.floor(255*(1-ratio)*2);
-  const g = (ratio>0.5)?255:Math.floor(255*(ratio)*2);
+  const r=(ratio<0.5)?255:Math.floor(255*(1-ratio)*2);
+  const g=(ratio>0.5)?255:Math.floor(255*(ratio)*2);
+  healthBarFill.style.width = (ratio*100)+"%";
   healthBarFill.style.background =
-    `linear-gradient(rgb(${r},${g},0), rgb(${Math.floor(r*0.6)},${Math.floor(g*0.6)},0))`;
-
+    `linear-gradient(rgb(${r},${g},0), rgb(${(r*0.6)|0},${(g*0.6)|0},0))`;
   healthText.textContent = `VIDA ${hp}/${playerMaxHP}`;
 
   if(playerHP<=0){
@@ -1074,69 +947,66 @@ function updateHUD(){
   }
 }
 
-/*
-=====================================================
-GAME LOOP
-=====================================================
-*/
+/* =====================================================
+   LOOP
+===================================================== */
 let lastT = performance.now();
-function gameLoop(now){
-  const dt = (now-lastT)/1000;
+function loop(now){
+  const dt=(now-lastT)/1000;
   lastT=now;
 
   if(playerHP>0 && !levelFinished){
     updatePlayer(dt);
+    updateEnemies(dt);
 
-    // cooldown disparo
     if(shootCooldown>0){
       shootCooldown-=dt;
-      if(shootCooldown<0){
-        shootCooldown=0;
-        shooting=false;
-      }
+      if(shootCooldown<0) shootCooldown=0;
     }
 
-    // RENDER
+    // dibujar mundo low-res
     renderWorld();
     renderEnemies(dt);
     renderPickups();
     renderGun(dt);
     renderFlash(dt);
-
     checkExit();
   } else {
-    // juego congelado pero seguimos dibujando escena final
+    // congelado pero dibujamos escena final
     renderWorld();
     renderEnemies(0);
     renderPickups();
     renderGun(0);
-    renderFlash(0);
   }
 
-  // debug
+  // escalar lowCanvas -> viewCanvas
+  viewCtx.imageSmoothingEnabled = false;
+  viewCtx.clearRect(0,0,viewCanvas.width,viewCanvas.height);
+  viewCtx.drawImage(
+    lowCanvas,
+    0,0,lowCanvas.width,lowCanvas.height,
+    0,0,viewCanvas.width,viewCanvas.height
+  );
+
   debugEl.textContent =
     `pos(${px.toFixed(2)},${py.toFixed(2)}) ang:${pAngle.toFixed(2)} `+
     `HP:${playerHP.toFixed(0)} core:${hasCore} `+
     `enemigos:${enemies.filter(e=>e.alive).length} vivos`;
 
   updateHUD();
-
-  requestAnimationFrame(gameLoop);
+  requestAnimationFrame(loop);
 }
 
-/*
-=====================================================
-INICIO
-=====================================================
-*/
+/* =====================================================
+   START
+===================================================== */
 startBtn.addEventListener('click', ()=>{
   startOverlay.style.display='none';
   centerText.textContent="Click para capturar mouse";
   lockPointer();
   lastT=performance.now();
-  requestAnimationFrame(gameLoop);
+  requestAnimationFrame(loop);
 });
-
 </script>
 </body>
 </html>
