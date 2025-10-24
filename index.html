@@ -168,9 +168,9 @@
 </head>
 <body>
 
-<!-- Importante: en vez de dibujar en pantalla completa directo,
-     usamos un canvas interno low-res y lo pintamos como imagen. -->
+<!-- Render interno baja resolución -->
 <canvas id="internal" width="320" height="180" style="display:none;"></canvas>
+<!-- Vista escalada full pantalla -->
 <canvas id="view"></canvas>
 
 <div id="ui">
@@ -216,11 +216,9 @@
 </div>
 
 <script>
-/* =====================================================
-   SETUP CANVAS
-   - internalCtx = render en baja resolución (320x180)
-   - viewCtx = escalado al canvas visible full screen
-===================================================== */
+/* ============================
+   CANVAS SETUP
+============================ */
 const lowCanvas = document.getElementById('internal');
 const lowCtx = lowCanvas.getContext('2d');
 const viewCanvas = document.getElementById('view');
@@ -233,9 +231,9 @@ function resizeView() {
 resizeView();
 window.addEventListener('resize', resizeView);
 
-/* =====================================================
-   DOM
-===================================================== */
+/* ============================
+   DOM refs
+============================ */
 const centerText = document.getElementById('centerText');
 const startOverlay = document.getElementById('startOverlay');
 const startBtn = document.getElementById('startBtn');
@@ -246,10 +244,9 @@ const healthText = document.getElementById('healthText');
 
 let mouseLocked = false;
 
-/* =====================================================
-   MUNDO / MAPA
-   Paredes con tipos (1,2,3,4) para texturas simples
-===================================================== */
+/* ============================
+   MAPA
+============================ */
 const worldMap = [
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
@@ -275,14 +272,14 @@ const worldMap = [
 const mapW = worldMap[0].length;
 const mapH = worldMap.length;
 
-/* =====================================================
+/* ============================
    PLAYER
-===================================================== */
+============================ */
 let px = 2.5;
 let py = 2.5;
 let pAngle = 0;
 
-const FOV = Math.PI/3;  // 60°
+const FOV = Math.PI/3;
 const moveSpeed = 3.0;
 const rotSpeed = 2.5;
 
@@ -296,28 +293,33 @@ let shootCooldown = 0;
 let hasCore = false;
 let levelFinished = false;
 
-/* =====================================================
-   INPUT
-===================================================== */
-const keys = {w:false,a:false,s:false,d:false,left:false,right:false};
+/* ============================
+   INPUT ESTADO
+============================ */
+const keys = { w:false, a:false, s:false, d:false, left:false, right:false };
 
-document.addEventListener('keydown', e=>{
-  if(e.code==="KeyW") keys.w=true;
-  if(e.code==="KeyA") keys.a=true;
-  if(e.code==="KeyS") keys.s=true;
-  if(e.code==="KeyD") keys.d=true;
-  if(e.code==="ArrowLeft") keys.left=true;
-  if(e.code==="ArrowRight") keys.right=true;
-});
-document.addEventListener('keyup', e=>{
-  if(e.code==="KeyW") keys.w=false;
-  if(e.code==="KeyA") keys.a=false;
-  if(e.code==="KeyS") keys.s=false;
-  if(e.code==="KeyD") keys.d=false;
-  if(e.code==="ArrowLeft") keys.left=false;
-  if(e.code==="ArrowRight") keys.right=false;
-});
+// 🔥 FIX PRINCIPAL AQUÍ:
+// - Escuchamos en window (no solo document)
+// - Hacemos preventDefault() para WASD y flechas
+//   para que el browser no “robe” la tecla.
+function handleKey(e, isDown){
+  // código físico de la tecla, independiente de layout
+  // (en teclado español igual es 'KeyW', 'KeyA', etc.)
+  const code = e.code;
 
+  if (code === "KeyW") { keys.w = isDown; e.preventDefault(); }
+  if (code === "KeyA") { keys.a = isDown; e.preventDefault(); }
+  if (code === "KeyS") { keys.s = isDown; e.preventDefault(); }
+  if (code === "KeyD") { keys.d = isDown; e.preventDefault(); }
+
+  if (code === "ArrowLeft")  { keys.left  = isDown; e.preventDefault(); }
+  if (code === "ArrowRight") { keys.right = isDown; e.preventDefault(); }
+}
+
+window.addEventListener('keydown', e => handleKey(e, true), {passive:false});
+window.addEventListener('keyup',   e => handleKey(e, false), {passive:false});
+
+// Pointer lock + mouse look
 function lockPointer(){
   viewCanvas.requestPointerLock = viewCanvas.requestPointerLock || viewCanvas.mozRequestPointerLock;
   viewCanvas.requestPointerLock();
@@ -344,9 +346,9 @@ viewCanvas.addEventListener('mousedown', ()=>{
   }
 });
 
-/* =====================================================
-   TEXTURAS PARED
-===================================================== */
+/* ============================
+   TEXTURAS PAREDES
+============================ */
 function makeWallTexture(patternFn){
   const c = document.createElement('canvas');
   c.width = 64; c.height = 64;
@@ -366,23 +368,19 @@ function makeWallTexture(patternFn){
   cx.putImageData(imgData,0,0);
   return c;
 }
-// rojo metálico
 const wallTex1 = makeWallTexture((x,y)=>{
   const stripe=(x%16<2||y%16<2)?80:0;
   return {r:150+stripe,g:20+stripe*0.2,b:20+stripe*0.2};
 });
-// gris laboratorio
 const wallTex2 = makeWallTexture((x,y)=>{
   const grid=((x%8===0)||(y%8===0))?200:140;
   return {r:grid,g:grid,b:grid+10};
 });
-// tóxico verde
 const wallTex3 = makeWallTexture((x,y)=>{
   const noise=((x*y)%13)*10;
   const baseG=180+(noise%40);
   return {r:20,g:baseG,b:20};
 });
-// puerta salida
 const wallTex4 = makeWallTexture((x,y)=>{
   const stripe = (((x+y)%16)<8);
   if(stripe){ return {r:230,g:210,b:40}; }
@@ -390,58 +388,53 @@ const wallTex4 = makeWallTexture((x,y)=>{
 });
 const wallTextures = {1:wallTex1,2:wallTex2,3:wallTex3,4:wallTex4};
 
-/* =====================================================
-   ENEMIGOS HUMANOS
-   - sprite con cabeza/brazos/piernas
-   - caminan hacia ti si te ven
-   - tienen HP
-===================================================== */
-function makeHumanSprite(baseColorSkin, baseColorSuit){
+/* ============================
+   ENEMIGOS HUMANOS con IA
+============================ */
+function makeHumanSprite(skin, suit){
   const c = document.createElement('canvas');
   c.width=24; c.height=40;
   const cx=c.getContext('2d');
 
-  // piernas
-  cx.fillStyle=baseColorSuit;
-  cx.fillRect(8,28,8,12); // piernas juntas
+  // Piernas
+  cx.fillStyle=suit;
+  cx.fillRect(8,28,8,12);
 
-  // torso
-  cx.fillStyle=baseColorSuit;
+  // Torso
+  cx.fillStyle=suit;
   cx.fillRect(4,14,16,16);
 
-  // brazos
-  cx.fillStyle=baseColorSkin;
-  cx.fillRect(0,16,4,12);  // brazo izq
-  cx.fillRect(20,16,4,12); // brazo der
+  // Brazos
+  cx.fillStyle=skin;
+  cx.fillRect(0,16,4,12);
+  cx.fillRect(20,16,4,12);
 
-  // cabeza
-  cx.fillStyle=baseColorSkin;
+  // Cabeza
+  cx.fillStyle=skin;
   cx.fillRect(7,4,10,10);
 
-  // cara (ojos)
+  // Ojos
   cx.fillStyle="#000";
   cx.fillRect(9,8,2,2);
   cx.fillRect(13,8,2,2);
 
-  // contorno
+  // Contorno
   cx.strokeStyle="#000";
   cx.lineWidth=2;
   cx.strokeRect(4,14,16,16);
   cx.strokeRect(7,4,10,10);
-
   return c;
 }
 
 const ENEMY_ARCHETYPE = {
-  speed: 1.5,        // m/s
-  dmgPerSec: 15,     // daño si está cerca
-  range: 1.3,        // distancia para golpear
+  speed: 1.5,
+  dmgPerSec: 15,
+  range: 1.3,
   maxHP: 60,
   textureIdle: makeHumanSprite("#ffe0c0","#444"),
-  textureWalk: makeHumanSprite("#ffe0c0","#666"),
+  textureWalk: makeHumanSprite("#ffe0c0","#666")
 };
 
-// enemigos en el mapa
 const enemies = [
   {x:6.5,y:3.5,hp:60,alive:true,walkPhase:0},
   {x:12.5,y:2.5,hp:60,alive:true,walkPhase:0},
@@ -450,9 +443,9 @@ const enemies = [
   {x:16.5,y:16.0,hp:60,alive:true,walkPhase:0},
 ];
 
-/* =====================================================
+/* ============================
    PICKUPS
-===================================================== */
+============================ */
 function makeMedkitTexture(){
   const c=document.createElement('canvas');
   c.width=20; c.height=20;
@@ -485,30 +478,31 @@ function makeCoreTexture(){
   cx.stroke();
   return c;
 }
+
 const medkitTex = makeMedkitTexture();
-const coreTex = makeCoreTexture();
+const coreTex   = makeCoreTexture();
 
 const pickups = [
-  {x:4.5,y:5.5, kind:"medkit", taken:false},
-  {x:10.5,y:10.5, kind:"medkit", taken:false},
-  {x:15.5,y:15.5, kind:"medkit", taken:false},
-  {x:12.5,y:13.5, kind:"core", taken:false},
+  {x:4.5,y:5.5,    kind:"medkit", taken:false},
+  {x:10.5,y:10.5,  kind:"medkit", taken:false},
+  {x:15.5,y:15.5,  kind:"medkit", taken:false},
+  {x:12.5,y:13.5,  kind:"core",   taken:false},
 ];
 
-const exitCell = {x:18,y:18-2}; // (18,16)
+// salida real del mapa: celda (18,16) es pared tipo 4
+const exitCell = {x:18,y:16};
 
-/* =====================================================
+/* ============================
    UTILIDADES
-===================================================== */
+============================ */
 function cellBlocked(x,y){
   const c = worldMap[y]?.[x];
   return (c===undefined || c===null || c!==0);
 }
 function lineOfSight(ax,ay,bx,by){
-  // raycast simple entre A y B
   const dx=bx-ax, dy=by-ay;
   const dist=Math.hypot(dx,dy);
-  const steps = Math.ceil(dist*10); // muestras
+  const steps = Math.ceil(dist*10);
   for(let i=1;i<=steps;i++){
     const t=i/steps;
     const rx=ax+dx*t;
@@ -522,9 +516,9 @@ function lineOfSight(ax,ay,bx,by){
   return true;
 }
 
-/* =====================================================
-   MOVIMIENTO PLAYER
-===================================================== */
+/* ============================
+   PLAYER MOVIMIENTO
+============================ */
 function tryMove(nx,ny){
   if(!cellBlocked(Math.floor(nx),Math.floor(ny))){
     px=nx;py=ny;
@@ -549,59 +543,54 @@ function updatePlayer(dt){
     tryMove(px+mx*moveSpeed*dt, py+my*moveSpeed*dt);
   }
 
-  // regeneración lenta
+  // regen lenta
   if(playerHP>0 && playerHP<playerMaxHP){
     playerHP += regenPerSec*dt;
     if(playerHP>playerMaxHP) playerHP=playerMaxHP;
   }
 }
 
-/* =====================================================
-   IA ENEMIGOS
-   - Si te ven, caminan hacia ti.
-   - Golpean si están cerca.
-===================================================== */
+/* ============================
+   ENEMIGOS IA
+============================ */
+const ENEMY = ENEMY_ARCHETYPE;
+
 function updateEnemies(dt){
   for(const e of enemies){
     if(!e.alive) continue;
-    // ver jugador
     const canSee = lineOfSight(e.x,e.y,px,py);
 
-    // mover hacia jugador si puede verte
     if(canSee){
-      // dirección hacia jugador
       const dx=px-e.x;
       const dy=py-e.y;
       const dist=Math.hypot(dx,dy);
       if(dist>0.1){
         const dirx=dx/dist;
         const diry=dy/dist;
-        // intentar mover
-        const step = ENEMY_ARCHETYPE.speed*dt;
-        const nx = e.x+dirx*step;
-        const ny = e.y+diry*step;
+        const step=ENEMY.speed*dt;
+        const nx=e.x+dirx*step;
+        const ny=e.y+diry*step;
         if(!cellBlocked(Math.floor(nx),Math.floor(ny))){
           e.x=nx;
           e.y=ny;
-          e.walkPhase += dt*10; // anim caminar
+          e.walkPhase += dt*10;
         }
       }
-
-      // daño si muy cerca
-      if(dist < ENEMY_ARCHETYPE.range){
-        playerHP -= ENEMY_ARCHETYPE.dmgPerSec * dt;
+      if(dist < ENEMY.range){
+        playerHP -= ENEMY.dmgPerSec * dt;
         if(playerHP<0) playerHP=0;
       }
     }
   }
 }
 
-/* =====================================================
-   RAYCAST + RENDER 3D EN LOW-RES
-===================================================== */
-function castRay(rayAngle){
-  const dirX=Math.cos(rayAngle);
-  const dirY=Math.sin(rayAngle);
+/* ============================
+   RAYCAST
+============================ */
+function castRay(angle){
+  const dirX=Math.cos(angle);
+  const dirY=Math.sin(angle);
+
   let mapX=Math.floor(px);
   let mapY=Math.floor(py);
 
@@ -612,10 +601,10 @@ function castRay(rayAngle){
   let stepY,sideDistY;
 
   if(dirX<0){stepX=-1;sideDistX=(px-mapX)*deltaDistX;}
-  else{stepX=1;sideDistX=(mapX+1.0-px)*deltaDistX;}
+  else {stepX=1;sideDistX=(mapX+1.0-px)*deltaDistX;}
 
   if(dirY<0){stepY=-1;sideDistY=(py-mapY)*deltaDistY;}
-  else{stepY=1;sideDistY=(mapY+1.0-py)*deltaDistY;}
+  else {stepY=1;sideDistY=(mapY+1.0-py)*deltaDistY;}
 
   let hit=0;
   let side=0;
@@ -637,14 +626,14 @@ function castRay(rayAngle){
   }
 
   let dist;
-  if(side===0) dist=(sideDistX-deltaDistX); else dist=(sideDistY-deltaDistY);
+  if(side===0) dist=(sideDistX-deltaDistX);
+  else         dist=(sideDistY-deltaDistY);
 
-  let wallType = worldMap[mapY]?.[mapX]||1;
+  const wallType = worldMap[mapY]?.[mapX]||1;
 
-  // tex coord en X
   let wallX;
   if(side===0){ wallX = py + dist*dirY; }
-  else{ wallX = px + dist*dirX; }
+  else        { wallX = px + dist*dirX; }
   wallX -= Math.floor(wallX);
 
   let texX = Math.floor(wallX*64);
@@ -656,9 +645,12 @@ function castRay(rayAngle){
 
 let zBuffer = new Array(lowCanvas.width);
 
+/* ============================
+   RENDER MUNDO LOW-RES
+============================ */
 function renderWorld(){
-  const w = lowCanvas.width;
-  const h = lowCanvas.height;
+  const w=lowCanvas.width;
+  const h=lowCanvas.height;
   const halfH = h/2|0;
 
   // cielo
@@ -676,31 +668,29 @@ function renderWorld(){
   lowCtx.fillRect(0,halfH,w,halfH);
 
   for(let x=0;x<w;x++){
-    const cameraX = (2*x/w -1);
+    const cameraX=(2*x/w -1);
     const rayAngle = pAngle + Math.atan(cameraX*Math.tan(FOV/2));
     const ray = castRay(rayAngle);
 
     zBuffer[x]=ray.dist;
 
     const lineH = (h/ray.dist)|0;
-    let drawStart = (-lineH/2 + halfH)|0;
-    let drawEnd   = ( lineH/2 + halfH)|0;
+    let drawStart=(-lineH/2 + halfH)|0;
+    let drawEnd  =( lineH/2 + halfH)|0;
     if(drawStart<0) drawStart=0;
-    if(drawEnd>=h) drawEnd=h-1;
+    if(drawEnd>=h)  drawEnd=h-1;
 
     const tex = wallTextures[ray.wallType]||wallTex1;
     const tctx = tex.getContext('2d');
     const colData = tctx.getImageData(ray.texX,0,1,64).data;
 
     for(let y=drawStart;y<=drawEnd;y++){
-      const dy = y - halfH + lineH/2;
-      const ty = ( (dy/lineH)*64 )|0;
-      const idx = ty*4;
-      let R=colData[idx+0],
-          G=colData[idx+1],
-          B=colData[idx+2];
+      const dy=y - halfH + lineH/2;
+      const ty=((dy/lineH)*64)|0;
+      const idx=ty*4;
+      let R=colData[idx+0],G=colData[idx+1],B=colData[idx+2];
       if(ray.side===1){R*=0.6;G*=0.6;B*=0.6;}
-      const shade = 1/(1+ray.dist*0.1);
+      const shade=1/(1+ray.dist*0.1);
       R=(R*shade)|0;G=(G*shade)|0;B=(B*shade)|0;
       lowCtx.fillStyle=`rgb(${R},${G},${B})`;
       lowCtx.fillRect(x,y,1,1);
@@ -708,12 +698,12 @@ function renderWorld(){
   }
 }
 
-/* =====================================================
-   PROYECCIÓN SPRITES (enemigos y pickups)
-===================================================== */
+/* ============================
+   PROYECCIÓN SPRITES
+============================ */
 function projectSprite(wx,wy,tw,th){
-  const w = lowCanvas.width;
-  const h = lowCanvas.height;
+  const w=lowCanvas.width;
+  const h=lowCanvas.height;
   const dx=wx-px, dy=wy-py;
   const dist=Math.hypot(dx,dy);
   const ang=Math.atan2(dy,dx);
@@ -725,72 +715,62 @@ function projectSprite(wx,wy,tw,th){
   const screenX=(0.5+(angDiff/FOV))*w;
   const spriteH=(h/dist);
   const spriteW=spriteH*(tw/th);
-  return {dist,screenX,spriteW,spriteH,ang,wx,wy};
+  return {dist,screenX,spriteW,spriteH,wx,wy};
 }
 
 function drawBillboard(tex,proj){
-  const w = lowCanvas.width;
-  const h = lowCanvas.height;
-  const tctx = tex.getContext('2d');
+  const w=lowCanvas.width;
+  const h=lowCanvas.height;
+  const tctx=tex.getContext('2d');
   const tw=tex.width, th=tex.height;
-  const imgData = tctx.getImageData(0,0,tw,th).data;
+  const imgData=tctx.getImageData(0,0,tw,th).data;
 
   const startX=(proj.screenX - proj.spriteW/2)|0;
   const endX=(proj.screenX + proj.spriteW/2)|0;
 
-  for(let sx=startX; sx<=endX; sx++){
+  for(let sx=startX;sx<=endX;sx++){
     if(sx<0||sx>=w) continue;
-    // zBuffer: si está detrás de pared, no se ve
     if(proj.dist>zBuffer[sx]) continue;
 
-    const u = ( (sx - (proj.screenX-proj.spriteW/2))/proj.spriteW )*tw;
-    const texX = u|0;
+    const u=((sx-(proj.screenX-proj.spriteW/2))/proj.spriteW)*tw;
+    const texX=u|0;
     if(texX<0||texX>=tw) continue;
 
-    const startY = ( (h/2 - proj.spriteH/2) )|0;
-    const endY = ( (h/2 + proj.spriteH/2) )|0;
-    for(let sy=startY; sy<=endY; sy++){
+    const startY=((h/2 - proj.spriteH/2))|0;
+    const endY=((h/2 + proj.spriteH/2))|0;
+    for(let sy=startY;sy<=endY;sy++){
       if(sy<0||sy>=h) continue;
-      const v = ( (sy - (h/2 - proj.spriteH/2))/proj.spriteH )*th;
-      const texY = v|0;
+      const v=((sy-(h/2-proj.spriteH/2))/proj.spriteH)*th;
+      const texY=v|0;
       if(texY<0||texY>=th) continue;
 
       const idx=(texY*tw+texX)*4;
-      const r=imgData[idx+0],
-            g=imgData[idx+1],
-            b=imgData[idx+2],
-            a=imgData[idx+3];
+      const r=imgData[idx+0],g=imgData[idx+1],b=imgData[idx+2],a=imgData[idx+3];
       if(a<30) continue;
-
-      const shade = 1/(1+proj.dist*0.25);
-      const R=(r*shade)|0;
-      const G=(g*shade)|0;
-      const B=(b*shade)|0;
-
+      const shade=1/(1+proj.dist*0.25);
+      const R=(r*shade)|0, G=(g*shade)|0, B=(b*shade)|0;
       lowCtx.fillStyle=`rgb(${R},${G},${B})`;
       lowCtx.fillRect(sx,sy,1,1);
     }
   }
 }
 
-/* =====================================================
+/* ============================
    RENDER ENEMIGOS / PICKUPS
-===================================================== */
+============================ */
 function renderEnemies(dt){
-  // ordenar por distancia desc (para pintar cerca encima de lejos)
-  const list = [];
+  const toDraw=[];
   for(const e of enemies){
     if(!e.alive) continue;
-    const tex = (Math.sin(e.walkPhase*2)>0)?ENEMY_ARCHETYPE.textureWalk:ENEMY_ARCHETYPE.textureIdle;
-    const proj = projectSprite(e.x,e.y,tex.width,tex.height);
+    const tex = (Math.sin(e.walkPhase*2)>0)
+      ? ENEMY.textureWalk
+      : ENEMY.textureIdle;
+    const proj=projectSprite(e.x,e.y,tex.width,tex.height);
     if(!proj) continue;
-
-    // si hay muro entre enemigo y player, igual lo dibujamos (porque igual puede estar detrás pared en visión del player),
-    // pero para IA usamos lineOfSight; para daño ya lo controlamos ahí
-    list.push({proj,tex});
+    toDraw.push({proj,tex});
   }
-  list.sort((A,B)=>B.proj.dist-A.proj.dist);
-  for(const obj of list){
+  toDraw.sort((A,B)=>B.proj.dist-A.proj.dist);
+  for(const obj of toDraw){
     drawBillboard(obj.tex,obj.proj);
   }
 }
@@ -799,7 +779,7 @@ function renderPickups(){
   const list=[];
   for(const p of pickups){
     if(p.taken) continue;
-    const tex = (p.kind==="medkit")?medkitTex:coreTex;
+    const tex=(p.kind==="medkit")?medkitTex:coreTex;
     const proj=projectSprite(p.x,p.y,tex.width,tex.height);
     if(!proj) continue;
     list.push({proj,tex,p});
@@ -808,8 +788,6 @@ function renderPickups(){
 
   for(const obj of list){
     const {p,proj,tex}=obj;
-
-    // pickup si muy cerca
     const dist=Math.hypot(p.x-px,p.y-py);
     if(dist<1.0){
       if(p.kind==="medkit"){
@@ -826,18 +804,15 @@ function renderPickups(){
         flashMsg("NÚCLEO ROJO ADQUIRIDO");
       }
     }
-
     drawBillboard(tex,proj);
   }
 }
 
-/* =====================================================
+/* ============================
    DISPARO
-   - Busca enemigo alineado con la mira
-   - Aplica daño (ya no muere de 1 tiro)
-===================================================== */
+============================ */
 function shootEnemy(){
-  const aimTolerance = 0.05;
+  const aimTolerance=0.05;
   let best=null;
   for(const e of enemies){
     if(!e.alive) continue;
@@ -866,18 +841,16 @@ function shootEnemy(){
   }
 }
 
-/* =====================================================
-   FLASH / HUD MESSAGES
-===================================================== */
+/* ============================
+   MENSAJES FLASH
+============================ */
 let msgTimer=0;
 let msgText="";
 function flashMsg(t){
   msgText=t;
   msgTimer=0.6;
 }
-
 function renderGun(dt){
-  // arma en lowres: un bloque gris abajo
   const w=lowCanvas.width, h=lowCanvas.height;
   const gunW=w*0.3;
   const gunH=h*0.3;
@@ -901,20 +874,24 @@ function renderGun(dt){
     lowCtx.fillText(msgText,w/2,h*0.6);
   }
 }
-
 function renderFlash(dt){
   if(msgTimer>0){
     msgTimer-=dt;
     if(msgTimer<0) msgTimer=0;
   }
   if(shootCooldown>0){
+    shootCooldown-=dt;
+    if(shootCooldown<0) shootCooldown=0;
+  }
+  // soltamos la anim de disparo
+  if(shootCooldown<=0){
     shooting=false;
   }
 }
 
-/* =====================================================
+/* ============================
    SALIDA DEL NIVEL
-===================================================== */
+============================ */
 function checkExit(){
   const cx=Math.floor(px);
   const cy=Math.floor(py);
@@ -927,9 +904,9 @@ function checkExit(){
   }
 }
 
-/* =====================================================
-   HUD VIDA / ESTADO
-===================================================== */
+/* ============================
+   HUD VIDA
+============================ */
 function updateHUD(){
   const hp=Math.max(0,Math.floor(playerHP));
   const ratio = hp/playerMaxHP;
@@ -947,9 +924,9 @@ function updateHUD(){
   }
 }
 
-/* =====================================================
-   LOOP
-===================================================== */
+/* ============================
+   MAIN LOOP
+============================ */
 let lastT = performance.now();
 function loop(now){
   const dt=(now-lastT)/1000;
@@ -959,12 +936,6 @@ function loop(now){
     updatePlayer(dt);
     updateEnemies(dt);
 
-    if(shootCooldown>0){
-      shootCooldown-=dt;
-      if(shootCooldown<0) shootCooldown=0;
-    }
-
-    // dibujar mundo low-res
     renderWorld();
     renderEnemies(dt);
     renderPickups();
@@ -972,15 +943,15 @@ function loop(now){
     renderFlash(dt);
     checkExit();
   } else {
-    // congelado pero dibujamos escena final
+    // congelar escena
     renderWorld();
     renderEnemies(0);
     renderPickups();
     renderGun(0);
   }
 
-  // escalar lowCanvas -> viewCanvas
-  viewCtx.imageSmoothingEnabled = false;
+  // escalar low->pantalla
+  viewCtx.imageSmoothingEnabled=false;
   viewCtx.clearRect(0,0,viewCanvas.width,viewCanvas.height);
   viewCtx.drawImage(
     lowCanvas,
@@ -994,16 +965,19 @@ function loop(now){
     `enemigos:${enemies.filter(e=>e.alive).length} vivos`;
 
   updateHUD();
+
   requestAnimationFrame(loop);
 }
 
-/* =====================================================
-   START
-===================================================== */
+/* ============================
+   START GAME
+============================ */
 startBtn.addEventListener('click', ()=>{
   startOverlay.style.display='none';
   centerText.textContent="Click para capturar mouse";
   lockPointer();
+  // forzamos foco a la ventana para que los eventos WASD entren
+  window.focus();
   lastT=performance.now();
   requestAnimationFrame(loop);
 });
