@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1.0" />
+<title>Mini DOOM-like FPS</title>
+<style>
+  html, body {
+    margin: 0;
+    background: #000;
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    overflow: hidden;
+  }
+
+  #gameCanvas {
+    display: block;
+    width: 100vw;
+    height: 100vh;
+    background: #000;
+  }
+
+  /* UI overlay */
+  #ui {
+    position: fixed;
+    left: 0;
+    top: 0;
+    width: 100vw;
+    color: #fff;
+    padding: 8px 12px;
+    font-size: 12px;
+    line-height: 1.4;
+    user-select: none;
+    pointer-events: none;
+    text-shadow: 0 0 4px #000;
+    font-family: monospace;
+  }
+
+  #centerText {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    translate: -50% -50%;
+    color: rgba(255,255,255,0.7);
+    font-family: monospace;
+    font-size: 14px;
+    text-align: center;
+    text-shadow: 0 0 4px #000;
+    user-select: none;
+    pointer-events: none;
+  }
+
+  #crosshair {
+    position: fixed;
+    left: 50%;
+    top: 50%;
+    width: 16px;
+    height: 16px;
+    translate: -50% -50%;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  #crosshair:before,
+  #crosshair:after {
+    content: '';
+    position: absolute;
+    background: rgba(255,255,255,0.8);
+  }
+
+  /* vertical line */
+  #crosshair:before {
+    left: 50%;
+    top: 0;
+    width: 2px;
+    height: 100%;
+    translate: -50% 0;
+  }
+
+  /* horizontal line */
+  #crosshair:after {
+    top: 50%;
+    left: 0;
+    height: 2px;
+    width: 100%;
+    translate: 0 -50%;
+  }
+
+  #startOverlay {
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at center, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.9) 70%);
+    display: grid;
+    place-items: center;
+    color: #fff;
+    font-family: system-ui, sans-serif;
+    text-align: center;
+    padding: 24px;
+    cursor: crosshair;
+  }
+
+  #startOverlay button {
+    background: #8b0000;
+    border: 0;
+    padding: 12px 20px;
+    border-radius: 8px;
+    color: #fff;
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+    box-shadow: 0 10px 30px rgba(255,0,0,0.4);
+  }
+
+  #startOverlay button:hover {
+    background: #b10000;
+  }
+
+  /* mobile hint hidden on desktop */
+  @media (min-width: 768px) {
+    .mobile-hint { display: none; }
+  }
+</style>
+</head>
+<body>
+
+<canvas id="gameCanvas" width="800" height="450"></canvas>
+
+<div id="ui">
+  <div><b>WASD</b> moverse · <b>Mouse</b> mirar · <b>Click</b> disparar</div>
+  <div>FPS demo tipo DOOM (raycasting JS puro)</div>
+  <div id="debug"></div>
+</div>
+
+<div id="centerText"></div>
+<div id="crosshair"></div>
+
+<div id="startOverlay">
+  <div style="max-width:320px;">
+    <h1 style="margin:0 0 12px;font-size:20px;letter-spacing:-0.03em;font-weight:700;font-family:monospace;">
+      MINI DOOM-LIKE<br>WEB DEMO
+    </h1>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.4;color:#ccc;font-family:monospace;">
+      Haz click en "INICIAR" y acepta capturar el mouse.<br>
+      Esto es un prototipo educativo sin texturas reales de DOOM.
+    </p>
+    <button id="startBtn">INICIAR</button>
+    <p class="mobile-hint" style="margin-top:12px;color:#f66;font-size:12px;">
+      Este demo está pensado para teclado + mouse (PC).
+    </p>
+  </div>
+</div>
+
+<script>
+/*
+  ============================
+  CONFIGURACIÓN DEL MOTOR
+  ============================
+*/
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Escala interna vs pantalla: vamos a ajustar en resize para que se vea nítido
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+const debugEl = document.getElementById('debug');
+const startOverlay = document.getElementById('startOverlay');
+const startBtn = document.getElementById('startBtn');
+const centerText = document.getElementById('centerText');
+
+// Mapa (grid 2D). 1 = pared sólida, 0 = espacio libre.
+const worldMap = [
+  [1,1,1,1,1,1,1,1,1,1,1,1],
+  [1,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,1,1,1,0,0,0,0,1],
+  [1,0,0,0,1,0,1,0,0,0,0,1],
+  [1,0,0,0,1,0,1,0,0,0,0,1],
+  [1,0,0,0,1,1,1,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,1],
+  [1,1,1,1,1,1,1,1,1,1,1,1],
+];
+const mapWidth = worldMap[0].length;
+const mapHeight = worldMap.length;
+
+// Jugador
+let px = 3.5;   // posición X en el mapa
+let py = 3.5;   // posición Y en el mapa
+let pAngle = 0; // ángulo mirando (radianes)
+
+const FOV = Math.PI / 3; // campo de visión ~60°
+const moveSpeed = 3.0;   // unidades/seg
+const rotSpeed = 2.5;    // rad/seg (rotación con teclado, mouse es más libre)
+
+let mouseLocked = false;
+
+// Control teclado:
+const keys = {
+  w:false,
+  a:false,
+  s:false,
+  d:false,
+  left:false,
+  right:false
+};
+
+// Enemigos muy simples (sprites billboards)
+const enemies = [
+  {x: 6.5, y: 4.5, dist: 0, alive: true},
+  {x: 8.5, y: 8.5, dist: 0, alive: true},
+];
+
+// Arma / disparo
+let shooting = false;
+let shootCooldown = 0;
+
+/*
+  ============================
+  INPUT
+  ============================
+*/
+document.addEventListener('keydown', e=>{
+  switch(e.code){
+    case 'KeyW': keys.w=true; break;
+    case 'KeyA': keys.a=true; break;
+    case 'KeyS': keys.s=true; break;
+    case 'KeyD': keys.d=true; break;
+    case 'ArrowLeft': keys.left=true; break;
+    case 'ArrowRight': keys.right=true; break;
+  }
+});
+document.addEventListener('keyup', e=>{
+  switch(e.code){
+    case 'KeyW': keys.w=false; break;
+    case 'KeyA': keys.a=false; break;
+    case 'KeyS': keys.s=false; break;
+    case 'KeyD': keys.d=false; break;
+    case 'ArrowLeft': keys.left=false; break;
+    case 'ArrowRight': keys.right=false; break;
+  }
+});
+
+function lockPointer() {
+  canvas.requestPointerLock = canvas.requestPointerLock ||
+                              canvas.mozRequestPointerLock;
+  canvas.requestPointerLock();
+}
+
+document.addEventListener('pointerlockchange', ()=>{
+  mouseLocked = (document.pointerLockElement === canvas);
+  if(mouseLocked){
+    centerText.textContent = "";
+  } else {
+    centerText.textContent = "Click para capturar mouse";
+  }
+});
+document.addEventListener('mousemove', e=>{
+  if(mouseLocked){
+    const sensitivity = 0.0025; // ajustar velocidad de giro mouse
+    pAngle += e.movementX * sensitivity;
+  }
+});
+
+canvas.addEventListener('mousedown', e=>{
+  // disparar
+  if (mouseLocked && shootCooldown <= 0) {
+    shooting = true;
+    shootCooldown = 0.25; // 250ms
+    tryHitEnemy();
+  } else {
+    // si no está locked, al click bloquear mouse
+    if(!mouseLocked){
+      lockPointer();
+    }
+  }
+});
+
+/*
+  ============================
+  LÓGICA DE MOVIMIENTO
+  ============================
+*/
+function tryMove(nx, ny){
+  // Evitar atravesar paredes: checamos celda del mapa
+  if(worldMap[Math.floor(ny)][Math.floor(nx)] === 0){
+    px = nx;
+    py = ny;
+  }
+}
+
+function updatePlayer(dt){
+  // rotación con flechas
+  if(keys.left)  pAngle -= rotSpeed*dt;
+  if(keys.right) pAngle += rotSpeed*dt;
+
+  const forwardX = Math.cos(pAngle);
+  const forwardY = Math.sin(pAngle);
+  const rightX = Math.cos(pAngle + Math.PI/2);
+  const rightY = Math.sin(pAngle + Math.PI/2);
+
+  let movX = 0;
+  let movY = 0;
+
+  if(keys.w){ movX += forwardX; movY += forwardY; }
+  if(keys.s){ movX -= forwardX; movY -= forwardY; }
+  if(keys.a){ movX -= rightX;   movY -= rightY;   }
+  if(keys.d){ movX += rightX;   movY += rightY;   }
+
+  const len = Math.hypot(movX,movY);
+  if(len>0){
+    movX/=len; movY/=len;
+    const nx = px + movX * moveSpeed * dt;
+    const ny = py + movY * moveSpeed * dt;
+    tryMove(nx, ny);
+  }
+}
+
+/*
+  ============================
+  RAYCASTING = "motor gráfico"
+  ============================
+  Para cada columna (x de pantalla):
+  1. Calcula el rayo en el ángulo correspondiente.
+  2. Avanza en el mapa con DDA hasta chocar una pared.
+  3. Dibuja una columna proporcionalmente inversa a la distancia.
+*/
+
+function castRay(rayAngle){
+  // dirección del rayo
+  const rayDirX = Math.cos(rayAngle);
+  const rayDirY = Math.sin(rayAngle);
+
+  // posición en grid
+  let mapX = Math.floor(px);
+  let mapY = Math.floor(py);
+
+  // longitud del rayo desde el paso horizontal/vertical
+  const deltaDistX = (rayDirX === 0) ? 1e30 : Math.abs(1 / rayDirX);
+  const deltaDistY = (rayDirY === 0) ? 1e30 : Math.abs(1 / rayDirY);
+
+  let stepX, sideDistX;
+  let stepY, sideDistY;
+
+  // Inicializar sideDist
+  if(rayDirX < 0){
+    stepX = -1;
+    sideDistX = (px - mapX) * deltaDistX;
+  } else {
+    stepX = 1;
+    sideDistX = (mapX + 1.0 - px) * deltaDistX;
+  }
+  if(rayDirY < 0){
+    stepY = -1;
+    sideDistY = (py - mapY) * deltaDistY;
+  } else {
+    stepY = 1;
+    sideDistY = (mapY + 1.0 - py) * deltaDistY;
+  }
+
+  let hit = 0;
+  let side = 0;
+
+  // DDA
+  while(hit === 0){
+    // Salto en X o en Y
+    if(sideDistX < sideDistY){
+      sideDistX += deltaDistX;
+      mapX += stepX;
+      side = 0;
+    } else {
+      sideDistY += deltaDistY;
+      mapY += stepY;
+      side = 1;
+    }
+    // ¿golpeó pared?
+    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight) {
+      hit = 1;
+      break;
+    }
+    if(worldMap[mapY][mapX] > 0){
+      hit = 1;
+    }
+  }
+
+  // Distancia perpendicular al plano cámara
+  let perpWallDist;
+  if(side === 0){
+    perpWallDist = (sideDistX - deltaDistX);
+  } else {
+    perpWallDist = (sideDistY - deltaDistY);
+  }
+
+  return {dist: perpWallDist, side};
+}
+
+// Dibujo del "mundo" 3D
+function renderWorld(){
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Fondo: cielo y piso
+  // cielo
+  const skyGradient = ctx.createLinearGradient(0,0,0,h/2);
+  skyGradient.addColorStop(0,"#222");
+  skyGradient.addColorStop(1,"#000022");
+  ctx.fillStyle = skyGradient;
+  ctx.fillRect(0,0,w,h/2);
+
+  // piso
+  const floorGradient = ctx.createLinearGradient(0,h/2,0,h);
+  floorGradient.addColorStop(0,"#1a1a1a");
+  floorGradient.addColorStop(1,"#000000");
+  ctx.fillStyle = floorGradient;
+  ctx.fillRect(0,h/2,w,h/2);
+
+  // Raycast por columna
+  for(let x=0; x<w; x++){
+    const cameraX = (2*x/w - 1); // de -1 a 1
+    const rayAngle = pAngle + Math.atan(cameraX * Math.tan(FOV/2));
+
+    const ray = castRay(rayAngle);
+    const dist = ray.dist;
+
+    // Altura de la pared proyectada
+    const lineH = Math.floor(h / dist);
+
+    // Limitar en pantalla
+    let drawStart = -lineH/2 + h/2;
+    let drawEnd   =  lineH/2 + h/2;
+    if(drawStart < 0) drawStart = 0;
+    if(drawEnd >= h)  drawEnd = h-1;
+
+    // Color distinto según lado para "sombrear"
+    // Paredes ladoX más claras, ladoY más oscuras
+    if(ray.side===0){
+      ctx.fillStyle = "#884444";
+    } else {
+      ctx.fillStyle = "#552222";
+    }
+
+    ctx.fillRect(x, drawStart, 1, drawEnd - drawStart);
+  }
+}
+
+/*
+  ============================
+  SPRITES (enemigos)
+  ============================
+  Para cada enemigo vivo:
+    - Calculamos vector desde el jugador.
+    - Proyectamos en la "pantalla".
+    - Dibujamos un rectángulo simple simulando sprite.
+*/
+function renderEnemies(){
+  const w = canvas.width;
+  const h = canvas.height;
+
+  // Ordenar por distancia (dibujar de lejos a cerca)
+  for(const e of enemies){
+    e.dist = Math.hypot(e.x - px, e.y - py);
+  }
+  enemies.sort((a,b)=>b.dist - a.dist);
+
+  for(const e of enemies){
+    if(!e.alive) continue;
+
+    const dx = e.x - px;
+    const dy = e.y - py;
+    const angleToEnemy = Math.atan2(dy, dx);
+
+    // Diferencia angular normalizada -pi..pi
+    let angleDiff = angleToEnemy - pAngle;
+    while(angleDiff < -Math.PI) angleDiff += 2*Math.PI;
+    while(angleDiff >  Math.PI) angleDiff -= 2*Math.PI;
+
+    // Solo dibuja si está al frente (|angleDiff| < FOV/2 aprox)
+    if(Math.abs(angleDiff) > FOV) continue;
+
+    const dist = Math.hypot(dx,dy);
+    if(dist < 0.2) continue; // muy cerca, evitar división ridícula
+
+    // Proyección horizontal en pantalla:
+    const screenX = (0.5 + (angleDiff / (FOV)) ) * w;
+
+    // Tamaño en pantalla inverso a distancia
+    const spriteH = (h / dist) * 0.7;
+    const spriteW = spriteH * 0.6;
+
+    const drawX = screenX - spriteW/2;
+    const drawY = h/2 - spriteH/2;
+
+    // " depth check " rudimentario:
+    // Si el enemigo está detrás de una pared más cerca, no deberíamos verlo.
+    // Para eso, casteamos un rayo justo a angleToEnemy y comparamos.
+    const testRay = castRay(angleToEnemy);
+    if(testRay.dist < dist) {
+      // pared bloqueando
+      continue;
+    }
+
+    // Dibujar enemigo como rectángulo rojo con borde negro
+    ctx.fillStyle = "#aa0000";
+    ctx.fillRect(drawX, drawY, spriteW, spriteH);
+
+    ctx.strokeStyle = "#000000";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(drawX, drawY, spriteW, spriteH);
+
+    // "cara"
+    ctx.fillStyle = "#ffffcc";
+    const faceW = spriteW*0.4;
+    const faceH = spriteH*0.25;
+    ctx.fillRect(drawX+spriteW*0.3, drawY+spriteH*0.2, faceW, faceH);
+  }
+}
+
+function tryHitEnemy(){
+  // Disparo: tomamos el enemigo más cercano al centro de la mira (angleDiff pequeño)
+  const aimTolerance = 0.05; // ~3°
+  let best = null;
+  for(const e of enemies){
+    if(!e.alive) continue;
+    const dx = e.x - px;
+    const dy = e.y - py;
+    const ang = Math.atan2(dy,dx);
+    let diff = ang - pAngle;
+    while(diff<-Math.PI) diff+=2*Math.PI;
+    while(diff> Math.PI) diff-=2*Math.PI;
+
+    if(Math.abs(diff) < aimTolerance){
+      const d = Math.hypot(dx,dy);
+      // checamos que no haya pared entremedio
+      const r = castRay(ang);
+      if(r.dist + 0.01 >= d){ // libre visión
+        if(!best || d<best.d){
+          best = {enemy:e, d};
+        }
+      }
+    }
+  }
+  if(best){
+    best.enemy.alive = false;
+    flashHit();
+  } else {
+    // fallaste
+    flashMiss();
+  }
+}
+
+/*
+  ============================
+  EFECTOS VISUALES HUD
+  ============================
+*/
+let flashTimer = 0;
+let flashColor = "rgba(255,255,255,0.4)";
+function flashHit(){
+  flashColor = "rgba(0,255,0,0.4)";
+  flashTimer = 0.08;
+}
+function flashMiss(){
+  flashColor = "rgba(255,0,0,0.4)";
+  flashTimer = 0.08;
+}
+
+function renderGun(dt){
+  const w = canvas.width;
+  const h = canvas.height;
+  const gunW = w*0.25;
+  const gunH = h*0.35;
+
+  // animación de disparo simple: retroceso
+  let recoilY = 0;
+  if(shooting){
+    recoilY = 10;
+  }
+
+  const x = w*0.5 - gunW*0.5;
+  const y = h - gunH + recoilY;
+
+  // Arma estilo escopeta rectangular
+  ctx.fillStyle = "#444";
+  ctx.fillRect(x, y, gunW, gunH);
+
+  ctx.fillStyle = "#777";
+  ctx.fillRect(x+gunW*0.1, y+gunH*0.4, gunW*0.8, gunH*0.5);
+
+  ctx.fillStyle = "#222";
+  ctx.fillRect(x+gunW*0.4, y+gunH*0.1, gunW*0.2, gunH*0.3);
+}
+
+function renderFlash(dt){
+  if(flashTimer>0){
+    ctx.fillStyle = flashColor;
+    ctx.fillRect(0,0,canvas.width,canvas.height);
+    flashTimer -= dt;
+    if(flashTimer<0) flashTimer=0;
+  }
+}
+
+/*
+  ============================
+  LOOP PRINCIPAL
+  ============================
+*/
+let lastT = performance.now();
+function gameLoop(now){
+  const dt = (now - lastT)/1000;
+  lastT = now;
+
+  updatePlayer(dt);
+
+  // Cooldown disparo
+  if(shootCooldown>0){
+    shootCooldown -= dt;
+    if(shootCooldown<0){
+      shootCooldown=0;
+      shooting=false;
+    }
+  }
+
+  // RENDER
+  renderWorld();
+  renderEnemies();
+  renderGun(dt);
+  renderFlash(dt);
+
+  // Debug info
+  debugEl.textContent =
+    `x:${px.toFixed(2)} y:${py.toFixed(2)} ang:${(pAngle).toFixed(2)} ` +
+    `enemies:${enemies.filter(e=>e.alive).length} vivos`;
+
+  requestAnimationFrame(gameLoop);
+}
+
+/*
+  ============================
+  INICIO DEL JUEGO
+  ============================
+*/
+startBtn.addEventListener('click', ()=>{
+  // ocultar overlay
+  startOverlay.style.display = 'none';
+  centerText.textContent = "Click para capturar mouse";
+  lockPointer();
+  lastT = performance.now();
+  requestAnimationFrame(gameLoop);
+});
+
+</script>
+</body>
+</html>
