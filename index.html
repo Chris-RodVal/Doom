@@ -245,16 +245,12 @@ const deadOverlay  = document.getElementById('deadOverlay');
    4 refuerzo negro industrial
    6 bio-contención verde tóxico (pared)
    7 señalización de peligro amarillo/negro
-   2 hangar/salida final (zona evacuación)
-   8 sala de control central (bloqueada con tarjeta roja)
-   5 puerta cerrada física (bloquea hasta que se abra)
-   9 "puerta roja": requiere tarjeta roja; luego se vuelve 0
+   2 hangar/salida final
+   8 sala control central (blindado)
+   5 puerta sellada
+   9 puerta roja (requiere tarjeta)
 ============================ */
 const worldMap = [
-  // estructura más laberíntica, distinto materiales
-  // zona inicial arriba izquierda, biocontención medio,
-  // control al centro-derecha (8 bloqueado por 9),
-  // hangar abajo derecha (2).
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,7,7,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,0,0,0,0,0,0,0,0,0,0,0,7,4,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
@@ -300,7 +296,7 @@ let px = 2.5;
 let py = 2.5;
 let pAngle = 0;
 
-const FOV = Math.PI/3;
+const FOV       = Math.PI/3;
 const moveSpeed = 3.0;
 const rotSpeed  = 2.5;
 let mouseLocked = false;
@@ -314,7 +310,7 @@ let alive         = true;
 let levelWon      = false;
 
 let hasRedKey     = false;
-let controlOpened = false; // una vez entras a CONTROL CENTRAL con tarjeta, abre hangar
+let controlOpened = false; // después de abrir Control Central
 
 // disparo jugador
 let shooting = false;
@@ -324,41 +320,23 @@ let shootCooldown = 0;
    ENEMIGOS
    type: 'melee' o 'ranged'
    state: 'patrol' / 'chase'
+   hp agregado
 ============================ */
 
+/* IMPORTANTE: Los pongo más cerca del inicio (x~6-12, y~4-8) para que los veas rápido */
 const enemies = [
-  // Guardia cuerpo a cuerpo (melee): zona biocontención
   {
-    x:12.5,y:6.5, alive:true, hp:40,
+    x:6.5, y:4.5, alive:true, hp:40,
     type:'melee', state:'patrol',
-    patrolPoints:[{x:12.5,y:6.5},{x:15.5,y:6.5},{x:15.5,y:8.5},{x:12.5,y:8.5}],
+    patrolPoints:[{x:6.5,y:4.5},{x:8.5,y:4.5},{x:8.5,y:6.5},{x:6.5,y:6.5}],
     patrolIndex:0,
     touchDamageTimer:0,
     fireCooldown:0
   },
-  // Tirador: pasillos hacia control (ranged)
   {
-    x:14.5,y:10.5, alive:true, hp:50,
+    x:11.5,y:6.5, alive:true, hp:50,
     type:'ranged', state:'patrol',
-    patrolPoints:[{x:14.5,y:10.5},{x:18.5,y:10.5},{x:18.5,y:13.5},{x:14.5,y:13.5}],
-    patrolIndex:0,
-    touchDamageTimer:0,
-    fireCooldown:0
-  },
-  // Tirador defendiendo control central
-  {
-    x:14.5,y:12.5, alive:true, hp:60,
-    type:'ranged', state:'patrol',
-    patrolPoints:[{x:14.5,y:12.5},{x:14.5,y:15.5},{x:17.5,y:15.5},{x:17.5,y:12.5}],
-    patrolIndex:0,
-    touchDamageTimer:0,
-    fireCooldown:0
-  },
-  // Guardia melee abajo cerca hangar
-  {
-    x:31.5,y:20.5, alive:true, hp:55,
-    type:'melee', state:'patrol',
-    patrolPoints:[{x:31.5,y:20.5},{x:31.5,y:23.5},{x:33.5,y:23.5},{x:33.5,y:20.5}],
+    patrolPoints:[{x:11.5,y:6.5},{x:13.5,y:6.5},{x:13.5,y:8.5},{x:11.5,y:8.5}],
     patrolIndex:0,
     touchDamageTimer:0,
     fireCooldown:0
@@ -369,10 +347,9 @@ const enemies = [
    BALAS ENEMIGAS
 ============================ */
 const projectiles = []; 
-// {x,y,vx,vy,life}
+// {x,y,vx,vy,life,dead}
 
 function spawnProjectile(x,y,tx,ty){
-  // Disparo lento tipo energía
   const dx = tx-x;
   const dy = ty-y;
   const d = Math.hypot(dx,dy)||1;
@@ -381,20 +358,19 @@ function spawnProjectile(x,y,tx,ty){
     x,y,
     vx:(dx/d)*speed,
     vy:(dy/d)*speed,
-    life:3.0 // dura 3s
+    life:3.0,
+    dead:false
   });
 }
 
 /* ============================
    ITEMS
-   type: 'medkit' cura
-   type: 'redkey' tarjeta roja
+   Los acerco también cerca tuyo (bio-contención inicial)
 ============================ */
 const items = [
-  {x:13.5,y:7.5,type:'redkey',taken:false},
-  {x:16.5,y:7.5,type:'medkit',taken:false},
-  {x:18.5,y:12.5,type:'medkit',taken:false},
-  {x:30.5,y:20.5,type:'medkit',taken:false},
+  {x:10.5,y:5.5,type:'redkey',taken:false},
+  {x:9.5,y:5.5,type:'medkit',taken:false},
+  {x:12.5,y:7.5,type:'medkit',taken:false},
 ];
 
 /* ============================
@@ -404,7 +380,7 @@ document.addEventListener('keydown', e=>{
   switch(e.code){
     case 'KeyW': keys.w=true; break;
     case 'KeyA': keys.a=true; break;
-    case 'KeyS': keys.s=true; break;
+    case 'KeyS': keys.s=false; /* fallthrough? no */ keys.s=true; break;
     case 'KeyD': keys.d=true; break;
     case 'ArrowLeft': keys.left=true; break;
     case 'ArrowRight': keys.right=true; break;
@@ -455,12 +431,12 @@ canvas.addEventListener('mousedown', e=>{
 });
 
 /* ============================
-   MOVIMIENTO / COLISIÓN
+   MOVIMIENTO Y COLISIÓN
 ============================ */
 function solidCell(cell){
-  // 1,4,6,7,8 son paredes sólidas
-  // 5 puertas cerradas sólidas
-  // 9 puerta roja cerrada
+  // 1,4,6,7,8 = muros
+  // 5 = puertas selladas
+  // 9 = puerta roja control
   if(cell===1||cell===4||cell===6||cell===7||cell===8||cell===5||cell===9) return true;
   return false;
 }
@@ -478,6 +454,62 @@ function tryMove(nx,ny){
   }
 }
 
+/* ============================
+   RAYCAST CORE (desde jugador)
+============================ */
+function castRay(rayAngle){
+  return castRayFrom(px,py,rayAngle);
+}
+
+/* ============================
+   RAYCAST GENÉRICO
+   NO modifica px/py global.
+============================ */
+function castRayFrom(ox,oy,rayAngle){
+  const rayDirX=Math.cos(rayAngle);
+  const rayDirY=Math.sin(rayAngle);
+
+  let mapX=Math.floor(ox);
+  let mapY=Math.floor(oy);
+
+  const deltaDistX=(rayDirX===0)?1e30:Math.abs(1/rayDirX);
+  const deltaDistY=(rayDirY===0)?1e30:Math.abs(1/rayDirY);
+
+  let stepX, sideDistX;
+  let stepY, sideDistY;
+
+  if(rayDirX<0){ stepX=-1; sideDistX=(ox-mapX)*deltaDistX; }
+  else { stepX=1; sideDistX=(mapX+1.0-ox)*deltaDistX; }
+
+  if(rayDirY<0){ stepY=-1; sideDistY=(oy-mapY)*deltaDistY; }
+  else { stepY=1; sideDistY=(mapY+1.0-oy)*deltaDistY; }
+
+  let hit=0, side=0, tile=0;
+  while(hit===0){
+    if(sideDistX<sideDistY){
+      sideDistX+=deltaDistX;
+      mapX+=stepX;
+      side=0;
+    } else {
+      sideDistY+=deltaDistY;
+      mapY+=stepY;
+      side=1;
+    }
+    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight){ hit=1; break; }
+    tile=worldMap[mapY][mapX];
+    if(solidCell(tile)){ hit=1; }
+  }
+
+  let perpWallDist;
+  if(side===0) perpWallDist=(sideDistX-deltaDistX);
+  else         perpWallDist=(sideDistY-deltaDistY);
+
+  return {dist:perpWallDist, side, tile};
+}
+
+/* ============================
+   UPDATE PLAYER
+============================ */
 function updatePlayer(dt){
   if(keys.left)  pAngle -= rotSpeed*dt;
   if(keys.right) pAngle += rotSpeed*dt;
@@ -499,80 +531,16 @@ function updatePlayer(dt){
 }
 
 /* ============================
-   RAYCAST
-============================ */
-function castRay(rayAngle){
-  const rayDirX=Math.cos(rayAngle);
-  const rayDirY=Math.sin(rayAngle);
-
-  let mapX=Math.floor(px);
-  let mapY=Math.floor(py);
-
-  const deltaDistX=(rayDirX===0)?1e30:Math.abs(1/rayDirX);
-  const deltaDistY=(rayDirY===0)?1e30:Math.abs(1/rayDirY);
-
-  let stepX,sideDistX;
-  let stepY,sideDistY;
-
-  if(rayDirX<0){ stepX=-1; sideDistX=(px-mapX)*deltaDistX; }
-  else { stepX=1; sideDistX=(mapX+1.0-px)*deltaDistX; }
-
-  if(rayDirY<0){ stepY=-1; sideDistY=(py-mapY)*deltaDistY; }
-  else { stepY=1; sideDistY=(mapY+1.0-py)*deltaDistY; }
-
-  let hit=0;
-  let side=0;
-  let tile=0;
-
-  while(hit===0){
-    if(sideDistX<sideDistY){
-      sideDistX+=deltaDistX;
-      mapX+=stepX;
-      side=0;
-    } else {
-      sideDistY+=deltaDistY;
-      mapY+=stepY;
-      side=1;
-    }
-    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight){ hit=1; break; }
-
-    tile=worldMap[mapY][mapX];
-
-    if(solidCell(tile)) hit=1;
-    // celdas especiales NO sólidas:
-    // 0 = pasillo
-    // 2 = hangar salida
-    // 3 = bio-sala interior (accesible)
-    // etc
-  }
-
-  let perpWallDist;
-  if(side===0) perpWallDist=(sideDistX-deltaDistX);
-  else         perpWallDist=(sideDistY-deltaDistY);
-
-  return {dist:perpWallDist, side, tile};
-}
-
-/* ============================
-   COLORES DE PARED
+   COLORES PARED
 ============================ */
 function wallColorForTile(tile){
-  // base militar
-  // 1 = metal gris azulado
-  if(tile===1) return "#405060";
-  // 4 = refuerzo negro industrial
-  if(tile===4) return "#161616";
-  // 6 = biocontención verde tóxica
-  if(tile===6) return "#005f00";
-  // 7 = señalización de peligro amarilla
-  if(tile===7) return "#7a6a00";
-  // 8 = control central blindado gris claro
-  if(tile===8) return "#666666";
-  // 5/9 = puertas cerradas (roja/seguridad)
-  if(tile===5) return "#550000";
-  if(tile===9) return "#8b0000";
-
-  // fallback
+  if(tile===1) return "#405060"; // metal gris azulado
+  if(tile===4) return "#161616"; // refuerzo negro
+  if(tile===6) return "#005f00"; // bio verde
+  if(tile===7) return "#7a6a00"; // señal peligro amarilla
+  if(tile===8) return "#666666"; // control central
+  if(tile===5) return "#550000"; // puerta sellada
+  if(tile===9) return "#8b0000"; // puerta roja
   return "#884444";
 }
 
@@ -593,14 +561,14 @@ function shadeHex(col, amt){
 function renderWorld(){
   const w=canvas.width, h=canvas.height;
 
-  // cielo tipo hangar metálico oscuro
+  // techo
   const skyGradient=ctx.createLinearGradient(0,0,0,h/2);
   skyGradient.addColorStop(0,"#111820");
   skyGradient.addColorStop(1,"#000010");
   ctx.fillStyle=skyGradient;
   ctx.fillRect(0,0,w,h/2);
 
-  // piso hormigón aceitoso
+  // piso
   const floorGradient=ctx.createLinearGradient(0,h/2,0,h);
   floorGradient.addColorStop(0,"#1a1a1a");
   floorGradient.addColorStop(1,"#000000");
@@ -630,35 +598,29 @@ function renderWorld(){
 }
 
 /* ============================
-   LINEA DE VISION / IA
+   LÍNEA DE VISIÓN
 ============================ */
 function losClear(ax,ay,bx,by){
-  const ang=Math.atan2(by-ay,bx-ax);
-  const dx=bx-ax, dy=by-ay;
-  const dTarget=Math.hypot(dx,dy);
-
-  const saveX=px, saveY=py;
-  px=ax; py=ay;
-  const r=castRay(ang);
-  px=saveX; py=saveY;
-
+  const ang = Math.atan2(by-ay,bx-ax);
+  const dx  = bx-ax;
+  const dy  = by-ay;
+  const dTarget = Math.hypot(dx,dy);
+  const r = castRayFrom(ax,ay,ang);
   return (r.dist+0.1>=dTarget);
 }
 
 /* ============================
-   ENEMIGOS: UPDATE
+   ENEMIGOS - UPDATE
 ============================ */
 function moveEnemy(e,nx,ny){
   if(canWalk(nx,ny)){
-    e.x=nx; e.y=ny;
+    e.x=nx;e.y=ny;
   }
 }
 
 function updateEnemies(dt){
   for(const e of enemies){
     if(!e.alive) continue;
-
-    // detectar jugador
     const distToPlayer=Math.hypot(e.x-px,e.y-py);
     const sees=(distToPlayer<8 && losClear(e.x,e.y,px,py));
     if(sees){
@@ -678,18 +640,17 @@ function updateEnemies(dt){
         moveEnemy(e,e.x+stepX,e.y+stepY);
       }
     } else if(e.state==='chase'){
-      // persecución
       const ddx=px-e.x;
       const ddy=py-e.y;
       const d=Math.hypot(ddx,ddy);
       if(d>0.05){
-        const stepX=ddx/d*(e.type==='melee'?2.0:1.5)*dt;
-        const stepY=ddy/d*(e.type==='melee'?2.0:1.5)*dt;
+        const spd=(e.type==='melee'?2.0:1.5);
+        const stepX=ddx/d*spd*dt;
+        const stepY=ddy/d*spd*dt;
         moveEnemy(e,e.x+stepX,e.y+stepY);
       }
 
       if(e.type==='melee'){
-        // daño cuerpo a cuerpo
         if(d<1.2){
           if(e.touchDamageTimer<=0){
             damagePlayer(12);
@@ -697,16 +658,15 @@ function updateEnemies(dt){
           }
         }
       } else if(e.type==='ranged'){
-        // dispara proyectil
         if(e.fireCooldown<=0 && d<7 && losClear(e.x,e.y,px,py)){
           spawnProjectile(e.x,e.y,px,py);
-          e.fireCooldown=1.0; // 1s entre tiros
+          e.fireCooldown=1.0;
         }
       }
     }
-    // cooldowns
+
     if(e.touchDamageTimer>0){
-      e.touchDamageTimer -= dt;
+      e.touchDamageTimer-=dt;
       if(e.touchDamageTimer<0)e.touchDamageTimer=0;
     }
     if(e.fireCooldown>0){
@@ -721,6 +681,7 @@ function updateEnemies(dt){
 ============================ */
 function updateProjectiles(dt){
   for(const p of projectiles){
+    if(p.dead) continue;
     p.life-=dt;
     if(p.life<=0){
       p.dead=true;
@@ -728,30 +689,27 @@ function updateProjectiles(dt){
     }
     const nx=p.x+p.vx*dt;
     const ny=p.y+p.vy*dt;
-    // colisión con pared
     if(!canWalk(nx,ny)){
       p.dead=true;
       continue;
     }
     p.x=nx; p.y=ny;
-    // colisión jugador
     const distToPlayer=Math.hypot(p.x-px,p.y-py);
     if(distToPlayer<0.7){
       damagePlayer(15);
       p.dead=true;
     }
   }
-  // limpiar muertos
+  // limpia muertos
   for(let i=projectiles.length-1;i>=0;i--){
     if(projectiles[i].dead) projectiles.splice(i,1);
   }
 }
 
 /* ============================
-   COMBATE JUGADOR
+   DISPARO JUGADOR
 ============================ */
 function playerShoot(){
-  // Raycast desde el centro: matar enemigo más cercano en la mira
   const aimTolerance=0.05;
   let best=null;
   for(const e of enemies){
@@ -764,14 +722,14 @@ function playerShoot(){
 
     if(Math.abs(diff)<aimTolerance){
       const d=Math.hypot(dx,dy);
-      const r=castRay(ang);
+      const r=castRayFrom(px,py,ang);
       if(r.dist+0.01>=d){
-        if(!best || d<best.d) best={enemy:e,d};
+        if(!best||d<best.d) best={enemy:e,d};
       }
     }
   }
   if(best){
-    best.enemy.hp -= 30; // daño del arma del jugador
+    best.enemy.hp -= 30;
     if(best.enemy.hp<=0){
       best.enemy.alive=false;
     }
@@ -782,7 +740,7 @@ function playerShoot(){
 }
 
 /* ============================
-   DAÑO / MUERTE JUGADOR
+   VIDA JUGADOR / MUERTE
 ============================ */
 function damagePlayer(amount){
   if(!alive) return;
@@ -797,7 +755,7 @@ function damagePlayer(amount){
 }
 
 /* ============================
-   ITEMS Y LLAVES / PUERTAS
+   ITEMS Y PUERTAS
 ============================ */
 function pickupItems(){
   for(const it of items){
@@ -817,17 +775,11 @@ function pickupItems(){
   }
 }
 
-/*
- Abrir puertas:
- - Celda 9 = puerta roja del Control Central. Se abre si tienes tarjeta roja y estás muy cerca.
-   Al abrir, también marcamos controlOpened = true.
- - Celdas 5 = puertas normales selladas: si controlOpened==true, se desbloquean (se vuelven 0).
-*/
+// abrir puertas cercanas
 function tryOpenDoors(){
   const cx=Math.floor(px);
   const cy=Math.floor(py);
 
-  // buscamos alrededor del jugador (radio pequeño) y abrimos si toca
   for(let oy=-1;oy<=1;oy++){
     for(let ox=-1;ox<=1;ox++){
       const tx=cx+ox;
@@ -835,10 +787,10 @@ function tryOpenDoors(){
       if(tx<0||ty<0||tx>=mapWidth||ty>=mapHeight) continue;
       const tile=worldMap[ty][tx];
 
-      // puerta roja (requiere tarjeta)
+      // puerta roja -> requiere tarjeta
       if(tile===9){
         if(hasRedKey){
-          worldMap[ty][tx]=0; // ya está abierta
+          worldMap[ty][tx]=0;
           controlOpened=true;
           showBigMessage("Control Central desbloqueado.\nCompuertas del Hangar liberadas.");
         } else {
@@ -846,7 +798,7 @@ function tryOpenDoors(){
         }
       }
 
-      // puertas estándar 5: se abren SOLO si ya abriste Control Central
+      // puertas estándar 5 -> se abren si controlOpened
       if(tile===5 && controlOpened){
         worldMap[ty][tx]=0;
         showBigMessage("Puerta liberada.");
@@ -862,7 +814,6 @@ function checkWinCondition(){
   if(!alive||levelWon) return;
   const cell=worldMap[Math.floor(py)][Math.floor(px)];
   if(cell===2){
-    // Hangar final
     if(controlOpened){
       levelWon=true;
       winOverlay.style.display='grid';
@@ -875,7 +826,7 @@ function checkWinCondition(){
 }
 
 /* ============================
-   EFECTOS VISUALES / HUD
+   EFECTOS VISUALES
 ============================ */
 let flashTimer=0;
 let flashColor="rgba(255,255,255,0.4)";
@@ -889,22 +840,19 @@ function flashMiss(){
 }
 
 function renderGun(){
-  const w=canvas.width, h=canvas.height;
+  const w=canvas.width,h=canvas.height;
   const gunW=w*0.25;
   const gunH=h*0.35;
   const recoilY=shooting?10:0;
   const x=w*0.5-gunW*0.5;
   const y=h-gunH+recoilY;
 
-  // cuerpo gris arma
   ctx.fillStyle="#444";
   ctx.fillRect(x,y,gunW,gunH);
 
-  // guardamanos metálico claro
   ctx.fillStyle="#777";
   ctx.fillRect(x+gunW*0.1,y+gunH*0.4,gunW*0.8,gunH*0.5);
 
-  // cañón negro
   ctx.fillStyle="#111";
   ctx.fillRect(x+gunW*0.4,y+gunH*0.1,gunW*0.2,gunH*0.3);
 }
@@ -919,29 +867,25 @@ function renderFlash(dt){
 }
 
 /* ============================
-   RENDER SPRITES
+   RENDER SPRITES (enemigos, ítems, balas)
 ============================ */
 function renderSprites(){
-  const w=canvas.width, h=canvas.height;
+  const w=canvas.width,h=canvas.height;
   const sprites=[];
 
-  // enemigos
   for(const e of enemies){
     if(!e.alive) continue;
-    sprites.push({kind:'enemy', enemy:e, x:e.x,y:e.y,
+    sprites.push({kind:'enemy',enemy:e,x:e.x,y:e.y,
       dist:Math.hypot(e.x-px,e.y-py)});
   }
-
-  // items
   for(const it of items){
     if(it.taken) continue;
-    sprites.push({kind:it.type, x:it.x,y:it.y,
+    sprites.push({kind:it.type,x:it.x,y:it.y,
       dist:Math.hypot(it.x-px,it.y-py)});
   }
-
-  // balas enemigas
   for(const p of projectiles){
-    sprites.push({kind:'proj', x:p.x,y:p.y,
+    if(p.dead) continue;
+    sprites.push({kind:'proj',x:p.x,y:p.y,
       dist:Math.hypot(p.x-px,p.y-py)});
   }
 
@@ -959,10 +903,9 @@ function renderSprites(){
     const dist=Math.hypot(dx,dy);
     if(dist<0.2) continue;
 
-    // bloquear con pared
-    const saveX=px, saveY=py;
-    const r=castRay(angTo);
-    if(r.dist<dist-0.05) continue; // oculto detrás pared
+    // ¿está detrás de pared? ahora usamos castRayFrom SIN tocar px/py
+    const r = castRayFrom(px,py,angTo);
+    if(r.dist<dist-0.05) continue;
 
     const screenX=(0.5+(diff/(FOV)))*w;
     const spriteH=(h/dist)*0.7;
@@ -971,23 +914,20 @@ function renderSprites(){
     const drawY=h/2-spriteH/2;
 
     if(s.kind==='enemy'){
-      // enemigo: cuerpo gris militar, casco rojo o amarillo
       const e=s.enemy;
-      const bodyColor = (e.type==='melee') ? "#505050" : "#404040";
-      const helmColor = (e.type==='melee') ? "#990000" : "#999900";
+      const bodyColor=(e.type==='melee')?"#505050":"#404040";
+      const helmColor=(e.type==='melee')?"#990000":"#999900";
 
-      ctx.fillStyle=bodyColor; // torso
+      ctx.fillStyle=bodyColor;
       ctx.fillRect(drawX,drawY,spriteW,spriteH);
       ctx.strokeStyle="#000";
       ctx.lineWidth=2;
       ctx.strokeRect(drawX,drawY,spriteW,spriteH);
 
-      // "casco"
       ctx.fillStyle=helmColor;
       ctx.fillRect(drawX+spriteW*0.25, drawY+spriteH*0.05,
                    spriteW*0.5, spriteH*0.25);
 
-      // "cara"
       ctx.fillStyle="#ffdd99";
       ctx.fillRect(drawX+spriteW*0.35, drawY+spriteH*0.18,
                    spriteW*0.3, spriteH*0.15);
@@ -1009,7 +949,6 @@ function renderSprites(){
       ctx.strokeRect(drawX,drawY,spriteW*0.5,spriteH*0.5);
 
     } else if(s.kind==='proj'){
-      // proyectil: orbe energético amarillo brillante
       ctx.fillStyle="#ffff55";
       ctx.beginPath();
       ctx.arc(drawX+spriteW*0.3,drawY+spriteH*0.3,
@@ -1056,7 +995,6 @@ function update(dt){
 
   updatePlayer(dt);
 
-  // disparo cooldown
   if(shootCooldown>0){
     shootCooldown-=dt;
     if(shootCooldown<0){
@@ -1065,7 +1003,6 @@ function update(dt){
     }
   }
 
-  // regeneración lenta
   if(regenCooldown>0){ regenCooldown-=dt; }
   else {
     if(playerHP>0 && playerHP<playerMaxHP){
@@ -1074,20 +1011,13 @@ function update(dt){
     }
   }
 
-  // IA y balas
   updateEnemies(dt);
   updateProjectiles(dt);
 
-  // recoger ítems
   pickupItems();
-
-  // intentar abrir puertas cercanas automáticamente
   tryOpenDoors();
-
-  // victoria
   checkWinCondition();
 
-  // mensajes temporales
   updateBigMessage(dt);
 }
 
