@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1.0" />
-<title>BASE OMEGA // Nivel 1</title>
+<title>BASE OMEGA // NIVEL 1</title>
 <style>
   html, body {
     margin: 0;
@@ -20,7 +20,6 @@
     background: #000;
   }
 
-  /* UI overlay */
   #ui {
     position: fixed;
     left: 0;
@@ -68,7 +67,6 @@
     position: absolute;
     background: rgba(255,255,255,0.8);
   }
-  /* vertical line */
   #crosshair:before {
     left: 50%;
     top: 0;
@@ -76,7 +74,6 @@
     height: 100%;
     translate: -50% 0;
   }
-  /* horizontal line */
   #crosshair:after {
     top: 50%;
     left: 0;
@@ -113,11 +110,6 @@
     background: #b10000;
   }
 
-  /* mobile hint hidden on desktop */
-  @media (min-width: 768px) {
-    .mobile-hint { display: none; }
-  }
-
   #bigMessage {
     position: fixed;
     bottom: 16px;
@@ -133,6 +125,7 @@
     pointer-events: none;
     min-width: 200px;
     text-align: center;
+    white-space: pre-line;
   }
 
   #winOverlay, #deadOverlay {
@@ -176,15 +169,20 @@
       BASE OMEGA<br>PROTOTIPO FPS
     </h1>
     <p style="margin:0 0 16px;font-size:13px;line-height:1.4;color:#ccc;font-family:monospace;white-space:pre-line;">
-      Despiertas en la Base Omega, un complejo industrial subterráneo.
-      Algo salió mal. Puertas selladas. Sirenas apagadas.
-      Personal desaparecido.
+      Subsuelo Militar: BASE OMEGA.
 
-      Objetivo:
-      1) Encuentra la TARJETA ROJA en el Laboratorio Biocontención.
-      2) Llega al HANGAR DE EVACUACIÓN y escapa.
+      ALERTA: Fuga biológica, personal hostil.
 
-      Si ves a los guardias mutados... dispara primero.
+      Misión:
+      1) Recupera la TARJETA ROJA en BIOCONTENCIÓN.
+      2) Usa la tarjeta para abrir CONTROL CENTRAL.
+      3) Desde CONTROL, libera el HANGAR.
+      4) Corre al HANGAR y evacúa.
+
+      Nota táctica:
+      - Guardias mutados cuerpo a cuerpo.
+      - Tiradores equipados con rifles de pulso lento.
+      - Balas visibles. Evita línea recta.
     </p>
     <button id="startBtn">INICIAR</button>
     <p class="mobile-hint" style="margin-top:12px;color:#f66;font-size:12px;">
@@ -195,10 +193,11 @@
 
 <div id="winOverlay">
   <div>
-    <h2>ESCAPASTE</h2>
+    <h2>EXFIL COMPLETADA</h2>
     <p style="font-size:14px;color:#ccc;white-space:pre-line;">
-      Subes a la cápsula de evacuación.
-      La Base Omega queda atrás ardiendo.
+      Control central abierto.
+      Hangar despresurizado.
+      Cápsula de escape lanzada.
 
       Nivel completado.
     </p>
@@ -207,9 +206,9 @@
 
 <div id="deadOverlay">
   <div>
-    <h2>ESTÁS MUERTO</h2>
+    <h2>OPERADOR CAÍDO</h2>
     <p style="font-size:14px;color:#ccc;white-space:pre-line;">
-      Tu señal vital se apagó en los pasillos de la Base Omega.
+      Tu señal vital se perdió en los corredores de la Base Omega.
 
       Recarga la página para intentarlo de nuevo.
     </p>
@@ -217,12 +216,9 @@
 </div>
 
 <script>
-/*
-  ============================
-  CONFIGURACIÓN DEL MOTOR
-  ============================
-*/
-
+/* ============================
+   CONFIG GENERAL
+============================ */
 const canvas = document.getElementById('gameCanvas');
 const ctx = canvas.getContext('2d');
 
@@ -233,145 +229,177 @@ function resizeCanvas() {
 resizeCanvas();
 window.addEventListener('resize', resizeCanvas);
 
-const debugEl = document.getElementById('debug');
+const debugEl      = document.getElementById('debug');
 const startOverlay = document.getElementById('startOverlay');
-const startBtn = document.getElementById('startBtn');
-const centerText = document.getElementById('centerText');
-const bigMessage = document.getElementById('bigMessage');
-const winOverlay = document.getElementById('winOverlay');
-const deadOverlay = document.getElementById('deadOverlay');
+const startBtn     = document.getElementById('startBtn');
+const centerText   = document.getElementById('centerText');
+const bigMessage   = document.getElementById('bigMessage');
+const winOverlay   = document.getElementById('winOverlay');
+const deadOverlay  = document.getElementById('deadOverlay');
 
-/*
-  ============================
-  MAPA GRANDE
-  ============================
-  0 = piso libre
-  1 = muro
-  2 = salida/hangar de evacuación (zona final)
-  3 = laboratorio (tarjeta roja spawnea aquí como item)
-  4 = decorativo muro grueso (visualmente mismo color, pero podemos usar otro tono)
-*/
+/* ============================
+   MAPA
+   Códigos:
+   0 piso / libre
+   1 muro metal gris azulado
+   4 refuerzo negro industrial
+   6 bio-contención verde tóxico (pared)
+   7 señalización de peligro amarillo/negro
+   2 hangar/salida final (zona evacuación)
+   8 sala de control central (bloqueada con tarjeta roja)
+   5 puerta cerrada física (bloquea hasta que se abra)
+   9 "puerta roja": requiere tarjeta roja; luego se vuelve 0
+============================ */
 const worldMap = [
-  // 40x40 aprox, tipo base con corredores, zona inicial, lab, hangar
+  // estructura más laberíntica, distinto materiales
+  // zona inicial arriba izquierda, biocontención medio,
+  // control al centro-derecha (8 bloqueado por 9),
+  // hangar abajo derecha (2).
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,1,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,1,4,3,3,3,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,1,4,3,3,3,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,1,4,4,4,4,4,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,1,1,1,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,7,7,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,7,4,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,0,0,7,7,7,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,1,1,1,1,4,4,4,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,1,6,6,1,4,3,4,1,6,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,1,6,6,1,4,3,4,1,6,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,1,6,6,1,4,3,4,1,6,6,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,1,1,1,1,4,4,4,1,1,1,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,1,1,5,1,4,9,4,1,1,5,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
 
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
 
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
 
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
 
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,2,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-  [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+  [1,0,0,0,0,0,0,0,0,0,5,0,4,8,4,0,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
   [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
 ];
 const mapWidth  = worldMap[0].length;
 const mapHeight = worldMap.length;
 
-/*
-  ============================
-  JUGADOR
-  ============================
-*/
-let px = 2.5;   // spawn zona inicial
+/* ============================
+   JUGADOR
+============================ */
+let px = 2.5;
 let py = 2.5;
 let pAngle = 0;
 
-const FOV = Math.PI / 3; // ~60°
-const moveSpeed = 3.0;   // unidades/seg
-const rotSpeed = 2.5;    // rad/seg
-
+const FOV = Math.PI/3;
+const moveSpeed = 3.0;
+const rotSpeed  = 2.5;
 let mouseLocked = false;
 
-const keys = {
-  w:false,a:false,s:false,d:false,left:false,right:false
-};
+const keys = { w:false,a:false,s:false,d:false,left:false,right:false };
 
-// Vida y combate
-let playerHP = 100;
+let playerHP      = 100;
 const playerMaxHP = 100;
-let regenCooldown = 0; // tiempo hasta empezar a regenerar
-let hasRedKey = false;
-let alive = true;
-let levelWon = false;
+let regenCooldown = 0;
+let alive         = true;
+let levelWon      = false;
 
-// disparo
+let hasRedKey     = false;
+let controlOpened = false; // una vez entras a CONTROL CENTRAL con tarjeta, abre hangar
+
+// disparo jugador
 let shooting = false;
-let shootCooldown = 0.0;
+let shootCooldown = 0;
 
-/*
-  ============================
-  ENEMIGOS (IA básica)
-  ============================
-  state: 'patrol' o 'chase'
-  patrolPoints: array de puntos que recorre
-  patrolIndex: índice actual
-  touchDamageTimer: cd para hacer daño cuerpo a cuerpo
-*/
+/* ============================
+   ENEMIGOS
+   type: 'melee' o 'ranged'
+   state: 'patrol' / 'chase'
+============================ */
+
 const enemies = [
+  // Guardia cuerpo a cuerpo (melee): zona biocontención
   {
-    x:10.5, y:5.5, alive:true,
-    state:'patrol',
-    patrolPoints:[{x:10.5,y:5.5},{x:14.5,y:5.5},{x:14.5,y:8.5},{x:10.5,y:8.5}],
+    x:12.5,y:6.5, alive:true, hp:40,
+    type:'melee', state:'patrol',
+    patrolPoints:[{x:12.5,y:6.5},{x:15.5,y:6.5},{x:15.5,y:8.5},{x:12.5,y:8.5}],
     patrolIndex:0,
-    touchDamageTimer:0
+    touchDamageTimer:0,
+    fireCooldown:0
   },
+  // Tirador: pasillos hacia control (ranged)
   {
-    x:20.5, y:12.5, alive:true,
-    state:'patrol',
-    patrolPoints:[{x:20.5,y:12.5},{x:25.5,y:12.5},{x:25.5,y:15.5},{x:20.5,y:15.5}],
+    x:14.5,y:10.5, alive:true, hp:50,
+    type:'ranged', state:'patrol',
+    patrolPoints:[{x:14.5,y:10.5},{x:18.5,y:10.5},{x:18.5,y:13.5},{x:14.5,y:13.5}],
     patrolIndex:0,
-    touchDamageTimer:0
+    touchDamageTimer:0,
+    fireCooldown:0
   },
+  // Tirador defendiendo control central
   {
-    x:32.5, y:25.5, alive:true,
-    state:'patrol',
-    patrolPoints:[{x:32.5,y:25.5},{x:35.5,y:25.5},{x:35.5,y:28.5},{x:32.5,y:28.5}],
+    x:14.5,y:12.5, alive:true, hp:60,
+    type:'ranged', state:'patrol',
+    patrolPoints:[{x:14.5,y:12.5},{x:14.5,y:15.5},{x:17.5,y:15.5},{x:17.5,y:12.5}],
     patrolIndex:0,
-    touchDamageTimer:0
+    touchDamageTimer:0,
+    fireCooldown:0
+  },
+  // Guardia melee abajo cerca hangar
+  {
+    x:31.5,y:20.5, alive:true, hp:55,
+    type:'melee', state:'patrol',
+    patrolPoints:[{x:31.5,y:20.5},{x:31.5,y:23.5},{x:33.5,y:23.5},{x:33.5,y:20.5}],
+    patrolIndex:0,
+    touchDamageTimer:0,
+    fireCooldown:0
   }
 ];
 
-/*
-  ============================
-  ITEMS
-  ============================
-  type: 'medkit' o 'redkey'
-*/
+/* ============================
+   BALAS ENEMIGAS
+============================ */
+const projectiles = []; 
+// {x,y,vx,vy,life}
+
+function spawnProjectile(x,y,tx,ty){
+  // Disparo lento tipo energía
+  const dx = tx-x;
+  const dy = ty-y;
+  const d = Math.hypot(dx,dy)||1;
+  const speed = 4; // lento, esquivable
+  projectiles.push({
+    x,y,
+    vx:(dx/d)*speed,
+    vy:(dy/d)*speed,
+    life:3.0 // dura 3s
+  });
+}
+
+/* ============================
+   ITEMS
+   type: 'medkit' cura
+   type: 'redkey' tarjeta roja
+============================ */
 const items = [
-  {x:11.5,y:6.5,type:'medkit',taken:false},
-  {x:24.5,y:13.5,type:'medkit',taken:false},
-  {x:12.5,y:7.5,type:'redkey',taken:false}, // Tarjeta roja en laboratorio (zona 3)
+  {x:13.5,y:7.5,type:'redkey',taken:false},
+  {x:16.5,y:7.5,type:'medkit',taken:false},
+  {x:18.5,y:12.5,type:'medkit',taken:false},
+  {x:30.5,y:20.5,type:'medkit',taken:false},
 ];
 
-/*
-  ============================
-  INPUT
-  ============================
-*/
+/* ============================
+   INPUT
+============================ */
 document.addEventListener('keydown', e=>{
   switch(e.code){
     case 'KeyW': keys.w=true; break;
@@ -410,372 +438,330 @@ document.addEventListener('pointerlockchange', ()=>{
 });
 document.addEventListener('mousemove', e=>{
   if(mouseLocked){
-    const sensitivity = 0.0025;
-    pAngle += e.movementX * sensitivity;
+    const sensitivity=0.0025;
+    pAngle += e.movementX*sensitivity;
   }
 });
 
 canvas.addEventListener('mousedown', e=>{
   if(!alive || levelWon) return;
   if(mouseLocked && shootCooldown<=0){
-    shooting = true;
-    shootCooldown = 0.25;
-    tryHitEnemy();
+    shooting=true;
+    shootCooldown=0.25;
+    playerShoot();
   } else {
     if(!mouseLocked){ lockPointer(); }
   }
 });
 
-/*
-  ============================
-  MOVIMIENTO DEL JUGADOR
-  ============================
-*/
-function canWalk(nx, ny){
+/* ============================
+   MOVIMIENTO / COLISIÓN
+============================ */
+function solidCell(cell){
+  // 1,4,6,7,8 son paredes sólidas
+  // 5 puertas cerradas sólidas
+  // 9 puerta roja cerrada
+  if(cell===1||cell===4||cell===6||cell===7||cell===8||cell===5||cell===9) return true;
+  return false;
+}
+
+function canWalk(nx,ny){
   if(nx<0||ny<0||nx>=mapWidth||ny>=mapHeight) return false;
   const cell = worldMap[Math.floor(ny)][Math.floor(nx)];
-  if(cell===1||cell===4) return false; // muros sólidos
+  if(solidCell(cell)) return false;
   return true;
 }
 
-function tryMove(nx, ny){
+function tryMove(nx,ny){
   if(canWalk(nx,ny)){
-    px = nx;
-    py = ny;
+    px=nx; py=ny;
   }
 }
 
 function updatePlayer(dt){
-  // rotación con flechas
   if(keys.left)  pAngle -= rotSpeed*dt;
   if(keys.right) pAngle += rotSpeed*dt;
 
-  const forwardX = Math.cos(pAngle);
-  const forwardY = Math.sin(pAngle);
-  const rightX = Math.cos(pAngle + Math.PI/2);
-  const rightY = Math.sin(pAngle + Math.PI/2);
+  const fx=Math.cos(pAngle), fy=Math.sin(pAngle);
+  const rx=Math.cos(pAngle+Math.PI/2), ry=Math.sin(pAngle+Math.PI/2);
 
-  let movX = 0;
-  let movY = 0;
+  let mx=0,my=0;
+  if(keys.w){ mx+=fx; my+=fy; }
+  if(keys.s){ mx-=fx; my-=fy; }
+  if(keys.a){ mx-=rx; my-=ry; }
+  if(keys.d){ mx+=rx; my+=ry; }
 
-  if(keys.w){ movX += forwardX; movY += forwardY; }
-  if(keys.s){ movX -= forwardX; movY -= forwardY; }
-  if(keys.a){ movX -= rightX;   movY -= rightY;   }
-  if(keys.d){ movX += rightX;   movY += rightY;   }
-
-  const len = Math.hypot(movX,movY);
+  const len=Math.hypot(mx,my);
   if(len>0){
-    movX/=len; movY/=len;
-    const nx = px + movX * moveSpeed * dt;
-    const ny = py + movY * moveSpeed * dt;
-    tryMove(nx, ny);
+    mx/=len; my/=len;
+    tryMove(px+mx*moveSpeed*dt, py+my*moveSpeed*dt);
   }
 }
 
-/*
-  ============================
-  RAYCASTING
-  ============================
-*/
+/* ============================
+   RAYCAST
+============================ */
 function castRay(rayAngle){
-  const rayDirX = Math.cos(rayAngle);
-  const rayDirY = Math.sin(rayAngle);
+  const rayDirX=Math.cos(rayAngle);
+  const rayDirY=Math.sin(rayAngle);
 
-  let mapX = Math.floor(px);
-  let mapY = Math.floor(py);
+  let mapX=Math.floor(px);
+  let mapY=Math.floor(py);
 
-  const deltaDistX = (rayDirX === 0) ? 1e30 : Math.abs(1 / rayDirX);
-  const deltaDistY = (rayDirY === 0) ? 1e30 : Math.abs(1 / rayDirY);
+  const deltaDistX=(rayDirX===0)?1e30:Math.abs(1/rayDirX);
+  const deltaDistY=(rayDirY===0)?1e30:Math.abs(1/rayDirY);
 
-  let stepX, sideDistX;
-  let stepY, sideDistY;
+  let stepX,sideDistX;
+  let stepY,sideDistY;
 
-  if(rayDirX < 0){
-    stepX = -1;
-    sideDistX = (px - mapX) * deltaDistX;
-  } else {
-    stepX = 1;
-    sideDistX = (mapX + 1.0 - px) * deltaDistX;
-  }
-  if(rayDirY < 0){
-    stepY = -1;
-    sideDistY = (py - mapY) * deltaDistY;
-  } else {
-    stepY = 1;
-    sideDistY = (mapY + 1.0 - py) * deltaDistY;
-  }
+  if(rayDirX<0){ stepX=-1; sideDistX=(px-mapX)*deltaDistX; }
+  else { stepX=1; sideDistX=(mapX+1.0-px)*deltaDistX; }
 
-  let hit = 0;
-  let side = 0;
-  let tile = 0;
+  if(rayDirY<0){ stepY=-1; sideDistY=(py-mapY)*deltaDistY; }
+  else { stepY=1; sideDistY=(mapY+1.0-py)*deltaDistY; }
 
-  while(hit === 0){
-    if(sideDistX < sideDistY){
-      sideDistX += deltaDistX;
-      mapX += stepX;
-      side = 0;
+  let hit=0;
+  let side=0;
+  let tile=0;
+
+  while(hit===0){
+    if(sideDistX<sideDistY){
+      sideDistX+=deltaDistX;
+      mapX+=stepX;
+      side=0;
     } else {
-      sideDistY += deltaDistY;
-      mapY += stepY;
-      side = 1;
+      sideDistY+=deltaDistY;
+      mapY+=stepY;
+      side=1;
     }
-    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight) { hit=1; break; }
-    tile = worldMap[mapY][mapX];
-    if(tile === 1 || tile === 4){
-      hit = 1;
-    } else if(tile === 2){
-      // salida no bloquea rayos (puerta abierta físicamente),
-      // la tratamos como espacio vacío en lo visual
-    } else if(tile === 3){
-      // laboratorio paredes interiores están rodeadas por 4 (muro grueso),
-      // pero el 3 es "sala" accesible, no lo bloqueamos.
-    }
+    if(mapX<0||mapX>=mapWidth||mapY<0||mapY>=mapHeight){ hit=1; break; }
+
+    tile=worldMap[mapY][mapX];
+
+    if(solidCell(tile)) hit=1;
+    // celdas especiales NO sólidas:
+    // 0 = pasillo
+    // 2 = hangar salida
+    // 3 = bio-sala interior (accesible)
+    // etc
   }
 
   let perpWallDist;
-  if(side===0){ perpWallDist = (sideDistX - deltaDistX); }
-  else        { perpWallDist = (sideDistY - deltaDistY); }
+  if(side===0) perpWallDist=(sideDistX-deltaDistX);
+  else         perpWallDist=(sideDistY-deltaDistY);
 
-  return {dist: perpWallDist, side, tile};
+  return {dist:perpWallDist, side, tile};
 }
 
-function renderWorld(){
-  const w = canvas.width;
-  const h = canvas.height;
+/* ============================
+   COLORES DE PARED
+============================ */
+function wallColorForTile(tile){
+  // base militar
+  // 1 = metal gris azulado
+  if(tile===1) return "#405060";
+  // 4 = refuerzo negro industrial
+  if(tile===4) return "#161616";
+  // 6 = biocontención verde tóxica
+  if(tile===6) return "#005f00";
+  // 7 = señalización de peligro amarilla
+  if(tile===7) return "#7a6a00";
+  // 8 = control central blindado gris claro
+  if(tile===8) return "#666666";
+  // 5/9 = puertas cerradas (roja/seguridad)
+  if(tile===5) return "#550000";
+  if(tile===9) return "#8b0000";
 
-  // Cielo
-  const skyGradient = ctx.createLinearGradient(0,0,0,h/2);
-  skyGradient.addColorStop(0,"#222");
-  skyGradient.addColorStop(1,"#000022");
-  ctx.fillStyle = skyGradient;
-  ctx.fillRect(0,0,w,h/2);
-
-  // Piso
-  const floorGradient = ctx.createLinearGradient(0,h/2,0,h);
-  floorGradient.addColorStop(0,"#1a1a1a");
-  floorGradient.addColorStop(1,"#000000");
-  ctx.fillStyle = floorGradient;
-  ctx.fillRect(0,h/2,w,h/2);
-
-  for(let x=0;x<w;x++){
-    const cameraX = (2*x/w - 1);
-    const rayAngle = pAngle + Math.atan(cameraX * Math.tan(FOV/2));
-    const ray = castRay(rayAngle);
-    const dist = ray.dist;
-    const lineH = Math.floor(h / dist);
-
-    let drawStart = -lineH/2 + h/2;
-    let drawEnd   =  lineH/2 + h/2;
-    if(drawStart < 0) drawStart = 0;
-    if(drawEnd >= h)  drawEnd = h-1;
-
-    // colores pared segun tipo
-    let fillCol = "#884444"; // default muro
-    if(ray.tile===4){ fillCol="#663333"; }
-    // sombrear lado
-    if(ray.side===1){
-      // más oscuro
-      fillCol = shadeColor(fillCol, -40);
-    }
-
-    if(ray.tile===1 || ray.tile===4){
-      ctx.fillStyle = fillCol;
-      ctx.fillRect(x, drawStart, 1, drawEnd-drawStart);
-    } else {
-      // Si no chocó muro (salida/lab/aire libre),
-      // dibujamos nada (solo cielo/piso)
-    }
-  }
+  // fallback
+  return "#884444";
 }
 
-/* util para sombrear color hex sencillo tipo #rrggbb */
-function shadeColor(col, amt){
-  // col "#rrggbb"
-  const r = parseInt(col.slice(1,3),16);
-  const g = parseInt(col.slice(3,5),16);
-  const b = parseInt(col.slice(5,7),16);
-  function clamp(v){ return Math.max(0,Math.min(255,v)); }
-  const R = clamp(r+amt);
-  const G = clamp(g+amt);
-  const B = clamp(b+amt);
+function shadeHex(col, amt){
+  const r=parseInt(col.slice(1,3),16);
+  const g=parseInt(col.slice(3,5),16);
+  const b=parseInt(col.slice(5,7),16);
+  const clamp=v=>Math.max(0,Math.min(255,v));
+  const R=clamp(r+amt), G=clamp(g+amt), B=clamp(b+amt);
   return "#"+R.toString(16).padStart(2,'0')+
              G.toString(16).padStart(2,'0')+
              B.toString(16).padStart(2,'0');
 }
 
-/*
-  ============================
-  SPRITES (enemigos e ítems)
-  ============================
-*/
+/* ============================
+   RENDER MUNDO
+============================ */
+function renderWorld(){
+  const w=canvas.width, h=canvas.height;
 
-function losClear(aX,aY,bX,bY){
-  // línea de visión: casteo ray hacia b y comparo dist
-  const ang = Math.atan2(bY-aY,bX-aX);
-  const dx = bX-aX;
-  const dy = bY-aY;
-  const dTarget = Math.hypot(dx,dy);
-  // casteo "desde el origen" aproximando con px/py global? mejor temporal:
-  const backupPX=px, backupPY=py;
-  px=aX; py=aY;
-  const r = castRay(ang);
-  px=backupPX; py=backupPY;
-  return (r.dist+0.05 >= dTarget);
+  // cielo tipo hangar metálico oscuro
+  const skyGradient=ctx.createLinearGradient(0,0,0,h/2);
+  skyGradient.addColorStop(0,"#111820");
+  skyGradient.addColorStop(1,"#000010");
+  ctx.fillStyle=skyGradient;
+  ctx.fillRect(0,0,w,h/2);
+
+  // piso hormigón aceitoso
+  const floorGradient=ctx.createLinearGradient(0,h/2,0,h);
+  floorGradient.addColorStop(0,"#1a1a1a");
+  floorGradient.addColorStop(1,"#000000");
+  ctx.fillStyle=floorGradient;
+  ctx.fillRect(0,h/2,w,h/2);
+
+  for(let x=0;x<w;x++){
+    const cameraX=(2*x/w-1);
+    const rayAngle=pAngle+Math.atan(cameraX*Math.tan(FOV/2));
+    const ray=castRay(rayAngle);
+    const dist=ray.dist;
+    const lineH=Math.floor(h/dist);
+    let drawStart=-lineH/2+h/2;
+    let drawEnd  = lineH/2+h/2;
+    if(drawStart<0) drawStart=0;
+    if(drawEnd>=h) drawEnd=h-1;
+
+    if(solidCell(ray.tile)){
+      let col=wallColorForTile(ray.tile);
+      if(ray.side===1){
+        col=shadeHex(col,-40);
+      }
+      ctx.fillStyle=col;
+      ctx.fillRect(x,drawStart,1,drawEnd-drawStart);
+    }
+  }
+}
+
+/* ============================
+   LINEA DE VISION / IA
+============================ */
+function losClear(ax,ay,bx,by){
+  const ang=Math.atan2(by-ay,bx-ax);
+  const dx=bx-ax, dy=by-ay;
+  const dTarget=Math.hypot(dx,dy);
+
+  const saveX=px, saveY=py;
+  px=ax; py=ay;
+  const r=castRay(ang);
+  px=saveX; py=saveY;
+
+  return (r.dist+0.1>=dTarget);
+}
+
+/* ============================
+   ENEMIGOS: UPDATE
+============================ */
+function moveEnemy(e,nx,ny){
+  if(canWalk(nx,ny)){
+    e.x=nx; e.y=ny;
+  }
 }
 
 function updateEnemies(dt){
   for(const e of enemies){
     if(!e.alive) continue;
 
-    // detección jugador
-    const distToPlayer = Math.hypot(e.x-px,e.y-py);
-    const seePlayer = (distToPlayer < 6 && losClear(e.x,e.y,px,py));
-
-    if(seePlayer){
+    // detectar jugador
+    const distToPlayer=Math.hypot(e.x-px,e.y-py);
+    const sees=(distToPlayer<8 && losClear(e.x,e.y,px,py));
+    if(sees){
       e.state='chase';
     }
 
     if(e.state==='patrol'){
-      const target = e.patrolPoints[e.patrolIndex];
-      const ddx = target.x - e.x;
-      const ddy = target.y - e.y;
-      const d = Math.hypot(ddx,ddy);
+      const target=e.patrolPoints[e.patrolIndex];
+      const ddx=target.x-e.x;
+      const ddy=target.y-e.y;
+      const d=Math.hypot(ddx,ddy);
       if(d<0.1){
-        e.patrolIndex = (e.patrolIndex+1)%e.patrolPoints.length;
+        e.patrolIndex=(e.patrolIndex+1)%e.patrolPoints.length;
       } else {
-        // intenta moverse hacia el punto de patrulla
-        const stepX = ddx/d * 1.5*dt;
-        const stepY = ddy/d * 1.5*dt;
-        moveEnemy(e, e.x+stepX, e.y+stepY);
+        const stepX=ddx/d*1.2*dt;
+        const stepY=ddy/d*1.2*dt;
+        moveEnemy(e,e.x+stepX,e.y+stepY);
       }
     } else if(e.state==='chase'){
-      // moverse hacia jugador
-      const ddx = px - e.x;
-      const ddy = py - e.y;
-      const d = Math.hypot(ddx,ddy);
+      // persecución
+      const ddx=px-e.x;
+      const ddy=py-e.y;
+      const d=Math.hypot(ddx,ddy);
       if(d>0.05){
-        const stepX = ddx/d * 2.2*dt;
-        const stepY = ddy/d * 2.2*dt;
-        moveEnemy(e, e.x+stepX, e.y+stepY);
+        const stepX=ddx/d*(e.type==='melee'?2.0:1.5)*dt;
+        const stepY=ddy/d*(e.type==='melee'?2.0:1.5)*dt;
+        moveEnemy(e,e.x+stepX,e.y+stepY);
       }
 
-      // daño cuerpo a cuerpo si está muy cerca
-      if(d<1.2){
-        if(e.touchDamageTimer<=0){
-          damagePlayer(12);
-          e.touchDamageTimer=1.0; // 1s cd
+      if(e.type==='melee'){
+        // daño cuerpo a cuerpo
+        if(d<1.2){
+          if(e.touchDamageTimer<=0){
+            damagePlayer(12);
+            e.touchDamageTimer=1.0;
+          }
+        }
+      } else if(e.type==='ranged'){
+        // dispara proyectil
+        if(e.fireCooldown<=0 && d<7 && losClear(e.x,e.y,px,py)){
+          spawnProjectile(e.x,e.y,px,py);
+          e.fireCooldown=1.0; // 1s entre tiros
         }
       }
     }
-
-    // bajar cd de daño
+    // cooldowns
     if(e.touchDamageTimer>0){
       e.touchDamageTimer -= dt;
       if(e.touchDamageTimer<0)e.touchDamageTimer=0;
     }
-  }
-}
-
-function moveEnemy(e,nx,ny){
-  if(canWalk(nx,ny)){
-    e.x=nx;
-    e.y=ny;
-  }
-}
-
-function renderSprites(){
-  const w = canvas.width;
-  const h = canvas.height;
-
-  // enemigos + items en un solo array para ordenar por distancia
-  const sprites = [];
-
-  for(const e of enemies){
-    if(!e.alive) continue;
-    sprites.push({
-      kind:'enemy',
-      x:e.x,y:e.y,
-      dist:Math.hypot(e.x-px,e.y-py)
-    });
-  }
-
-  for(const it of items){
-    if(it.taken) continue;
-    sprites.push({
-      kind:it.type,
-      x:it.x,y:it.y,
-      dist:Math.hypot(it.x-px,it.y-py)
-    });
-  }
-
-  // dibujar lejos->cerca
-  sprites.sort((a,b)=>b.dist-a.dist);
-
-  for(const s of sprites){
-    const dx = s.x - px;
-    const dy = s.y - py;
-    const angleTo = Math.atan2(dy,dx);
-    let angleDiff = angleTo - pAngle;
-    while(angleDiff<-Math.PI) angleDiff+=2*Math.PI;
-    while(angleDiff> Math.PI) angleDiff-=2*Math.PI;
-    if(Math.abs(angleDiff)>FOV) continue;
-
-    const dist = Math.hypot(dx,dy);
-    if(dist<0.2) continue;
-
-    // depth check LOS contra paredes
-    const backupPX=px, backupPY=py;
-    px=backupPX; py=backupPY; // not moving actually, just clarity
-    const r = castRay(angleTo);
-    if(r.dist < dist-0.05) continue; // bloqueado por pared
-
-    const screenX = (0.5 + (angleDiff/(FOV))) * w;
-    const spriteH = (h / dist) * 0.7;
-    const spriteW = spriteH * 0.6;
-    const drawX = screenX - spriteW/2;
-    const drawY = h/2 - spriteH/2;
-
-    if(s.kind==='enemy'){
-      ctx.fillStyle = "#aa0000";
-      ctx.fillRect(drawX, drawY, spriteW, spriteH);
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(drawX, drawY, spriteW, spriteH);
-      // cara amarilla
-      ctx.fillStyle = "#ffff99";
-      ctx.fillRect(drawX+spriteW*0.3, drawY+spriteH*0.2, spriteW*0.4, spriteH*0.25);
-    } else if(s.kind==='medkit'){
-      ctx.fillStyle = "#00aa00";
-      ctx.fillRect(drawX, drawY, spriteW*0.7, spriteH*0.7);
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(drawX+spriteW*0.22, drawY+spriteH*0.32, spriteW*0.26, spriteH*0.06);
-      ctx.fillRect(drawX+spriteW*0.31, drawY+spriteH*0.23, spriteW*0.06, spriteH*0.26);
-    } else if(s.kind==='redkey'){
-      ctx.fillStyle = "#ff0000";
-      ctx.fillRect(drawX, drawY, spriteW*0.5, spriteH*0.5);
-      ctx.strokeStyle = "#fff";
-      ctx.lineWidth = 2;
-      ctx.strokeRect(drawX, drawY, spriteW*0.5, spriteH*0.5);
+    if(e.fireCooldown>0){
+      e.fireCooldown-=dt;
+      if(e.fireCooldown<0)e.fireCooldown=0;
     }
   }
 }
 
-/*
-  ============================
-  COMBATE / DISPARO
-  ============================
-*/
-function tryHitEnemy(){
-  const aimTolerance = 0.05;
+/* ============================
+   PROYECTILES ENEMIGOS
+============================ */
+function updateProjectiles(dt){
+  for(const p of projectiles){
+    p.life-=dt;
+    if(p.life<=0){
+      p.dead=true;
+      continue;
+    }
+    const nx=p.x+p.vx*dt;
+    const ny=p.y+p.vy*dt;
+    // colisión con pared
+    if(!canWalk(nx,ny)){
+      p.dead=true;
+      continue;
+    }
+    p.x=nx; p.y=ny;
+    // colisión jugador
+    const distToPlayer=Math.hypot(p.x-px,p.y-py);
+    if(distToPlayer<0.7){
+      damagePlayer(15);
+      p.dead=true;
+    }
+  }
+  // limpiar muertos
+  for(let i=projectiles.length-1;i>=0;i--){
+    if(projectiles[i].dead) projectiles.splice(i,1);
+  }
+}
+
+/* ============================
+   COMBATE JUGADOR
+============================ */
+function playerShoot(){
+  // Raycast desde el centro: matar enemigo más cercano en la mira
+  const aimTolerance=0.05;
   let best=null;
   for(const e of enemies){
     if(!e.alive) continue;
-    const dx=e.x-px;
-    const dy=e.y-py;
+    const dx=e.x-px, dy=e.y-py;
     const ang=Math.atan2(dy,dx);
     let diff=ang-pAngle;
     while(diff<-Math.PI) diff+=2*Math.PI;
     while(diff> Math.PI) diff-=2*Math.PI;
+
     if(Math.abs(diff)<aimTolerance){
       const d=Math.hypot(dx,dy);
       const r=castRay(ang);
@@ -785,38 +771,46 @@ function tryHitEnemy(){
     }
   }
   if(best){
-    best.enemy.alive=false;
+    best.enemy.hp -= 30; // daño del arma del jugador
+    if(best.enemy.hp<=0){
+      best.enemy.alive=false;
+    }
     flashHit();
   } else {
     flashMiss();
   }
 }
 
+/* ============================
+   DAÑO / MUERTE JUGADOR
+============================ */
 function damagePlayer(amount){
   if(!alive) return;
   playerHP -= amount;
-  regenCooldown = 3.0; // reinicia cooldown de regen
+  regenCooldown=3.0;
   if(playerHP<=0){
     playerHP=0;
     alive=false;
     deadOverlay.style.display='grid';
-    centerText.textContent = "";
+    centerText.textContent="";
   }
 }
 
+/* ============================
+   ITEMS Y LLAVES / PUERTAS
+============================ */
 function pickupItems(){
   for(const it of items){
     if(it.taken) continue;
-    const d = Math.hypot(it.x-px,it.y-py);
+    const d=Math.hypot(it.x-px,it.y-py);
     if(d<1.0){
       if(it.type==='medkit'){
-        // cura
-        playerHP = Math.min(playerMaxHP, playerHP+40);
+        playerHP=Math.min(playerMaxHP,playerHP+40);
         showBigMessage("Botiquín recogido (+40 HP)");
         it.taken=true;
       } else if(it.type==='redkey'){
         hasRedKey=true;
-        showBigMessage("Tarjeta Roja obtenida.\nDirígete al Hangar de Evacuación.");
+        showBigMessage("Tarjeta Roja obtenida.\nAccede a CONTROL CENTRAL.");
         it.taken=true;
       }
     }
@@ -824,65 +818,223 @@ function pickupItems(){
 }
 
 /*
-  ============================
-  EFECTOS VISUALES HUD
-  ============================
+ Abrir puertas:
+ - Celda 9 = puerta roja del Control Central. Se abre si tienes tarjeta roja y estás muy cerca.
+   Al abrir, también marcamos controlOpened = true.
+ - Celdas 5 = puertas normales selladas: si controlOpened==true, se desbloquean (se vuelven 0).
 */
-let flashTimer = 0;
-let flashColor = "rgba(255,255,255,0.4)";
+function tryOpenDoors(){
+  const cx=Math.floor(px);
+  const cy=Math.floor(py);
+
+  // buscamos alrededor del jugador (radio pequeño) y abrimos si toca
+  for(let oy=-1;oy<=1;oy++){
+    for(let ox=-1;ox<=1;ox++){
+      const tx=cx+ox;
+      const ty=cy+oy;
+      if(tx<0||ty<0||tx>=mapWidth||ty>=mapHeight) continue;
+      const tile=worldMap[ty][tx];
+
+      // puerta roja (requiere tarjeta)
+      if(tile===9){
+        if(hasRedKey){
+          worldMap[ty][tx]=0; // ya está abierta
+          controlOpened=true;
+          showBigMessage("Control Central desbloqueado.\nCompuertas del Hangar liberadas.");
+        } else {
+          showBigMessage("Acceso denegado.\nRequiere Tarjeta Roja.");
+        }
+      }
+
+      // puertas estándar 5: se abren SOLO si ya abriste Control Central
+      if(tile===5 && controlOpened){
+        worldMap[ty][tx]=0;
+        showBigMessage("Puerta liberada.");
+      }
+    }
+  }
+}
+
+/* ============================
+   WIN CONDITION
+============================ */
+function checkWinCondition(){
+  if(!alive||levelWon) return;
+  const cell=worldMap[Math.floor(py)][Math.floor(px)];
+  if(cell===2){
+    // Hangar final
+    if(controlOpened){
+      levelWon=true;
+      winOverlay.style.display='grid';
+      centerText.textContent="";
+      showBigMessage("EVAC COMPL.");
+    } else {
+      showBigMessage("El Hangar sigue sellado.\nVe a CONTROL CENTRAL.");
+    }
+  }
+}
+
+/* ============================
+   EFECTOS VISUALES / HUD
+============================ */
+let flashTimer=0;
+let flashColor="rgba(255,255,255,0.4)";
 function flashHit(){
-  flashColor = "rgba(0,255,0,0.4)";
-  flashTimer = 0.08;
+  flashColor="rgba(0,255,0,0.4)";
+  flashTimer=0.08;
 }
 function flashMiss(){
-  flashColor = "rgba(255,0,0,0.4)";
-  flashTimer = 0.08;
+  flashColor="rgba(255,0,0,0.4)";
+  flashTimer=0.08;
 }
 
-function renderGun(dt){
-  const w = canvas.width;
-  const h = canvas.height;
-  const gunW = w*0.25;
-  const gunH = h*0.35;
-  let recoilY = shooting ? 10 : 0;
-  const x = w*0.5 - gunW*0.5;
-  const y = h - gunH + recoilY;
+function renderGun(){
+  const w=canvas.width, h=canvas.height;
+  const gunW=w*0.25;
+  const gunH=h*0.35;
+  const recoilY=shooting?10:0;
+  const x=w*0.5-gunW*0.5;
+  const y=h-gunH+recoilY;
 
-  ctx.fillStyle = "#444";
-  ctx.fillRect(x, y, gunW, gunH);
+  // cuerpo gris arma
+  ctx.fillStyle="#444";
+  ctx.fillRect(x,y,gunW,gunH);
 
-  ctx.fillStyle = "#777";
-  ctx.fillRect(x+gunW*0.1, y+gunH*0.4, gunW*0.8, gunH*0.5);
+  // guardamanos metálico claro
+  ctx.fillStyle="#777";
+  ctx.fillRect(x+gunW*0.1,y+gunH*0.4,gunW*0.8,gunH*0.5);
 
-  ctx.fillStyle = "#222";
-  ctx.fillRect(x+gunW*0.4, y+gunH*0.1, gunW*0.2, gunH*0.3);
+  // cañón negro
+  ctx.fillStyle="#111";
+  ctx.fillRect(x+gunW*0.4,y+gunH*0.1,gunW*0.2,gunH*0.3);
 }
 
 function renderFlash(dt){
   if(flashTimer>0){
-    ctx.fillStyle = flashColor;
+    ctx.fillStyle=flashColor;
     ctx.fillRect(0,0,canvas.width,canvas.height);
-    flashTimer -= dt;
+    flashTimer-=dt;
     if(flashTimer<0) flashTimer=0;
   }
 }
 
-/*
-  ============================
-  HUD / MENSAJES
-  ============================
-*/
-let bigMessageTimer = 0;
-function showBigMessage(msg){
-  bigMessage.textContent = msg;
-  bigMessageTimer = 3.0;
+/* ============================
+   RENDER SPRITES
+============================ */
+function renderSprites(){
+  const w=canvas.width, h=canvas.height;
+  const sprites=[];
+
+  // enemigos
+  for(const e of enemies){
+    if(!e.alive) continue;
+    sprites.push({kind:'enemy', enemy:e, x:e.x,y:e.y,
+      dist:Math.hypot(e.x-px,e.y-py)});
+  }
+
+  // items
+  for(const it of items){
+    if(it.taken) continue;
+    sprites.push({kind:it.type, x:it.x,y:it.y,
+      dist:Math.hypot(it.x-px,it.y-py)});
+  }
+
+  // balas enemigas
+  for(const p of projectiles){
+    sprites.push({kind:'proj', x:p.x,y:p.y,
+      dist:Math.hypot(p.x-px,p.y-py)});
+  }
+
+  sprites.sort((a,b)=>b.dist-a.dist);
+
+  for(const s of sprites){
+    const dx=s.x-px;
+    const dy=s.y-py;
+    const angTo=Math.atan2(dy,dx);
+    let diff=angTo-pAngle;
+    while(diff<-Math.PI) diff+=2*Math.PI;
+    while(diff> Math.PI) diff-=2*Math.PI;
+    if(Math.abs(diff)>FOV) continue;
+
+    const dist=Math.hypot(dx,dy);
+    if(dist<0.2) continue;
+
+    // bloquear con pared
+    const saveX=px, saveY=py;
+    const r=castRay(angTo);
+    if(r.dist<dist-0.05) continue; // oculto detrás pared
+
+    const screenX=(0.5+(diff/(FOV)))*w;
+    const spriteH=(h/dist)*0.7;
+    const spriteW=spriteH*0.6;
+    const drawX=screenX-spriteW/2;
+    const drawY=h/2-spriteH/2;
+
+    if(s.kind==='enemy'){
+      // enemigo: cuerpo gris militar, casco rojo o amarillo
+      const e=s.enemy;
+      const bodyColor = (e.type==='melee') ? "#505050" : "#404040";
+      const helmColor = (e.type==='melee') ? "#990000" : "#999900";
+
+      ctx.fillStyle=bodyColor; // torso
+      ctx.fillRect(drawX,drawY,spriteW,spriteH);
+      ctx.strokeStyle="#000";
+      ctx.lineWidth=2;
+      ctx.strokeRect(drawX,drawY,spriteW,spriteH);
+
+      // "casco"
+      ctx.fillStyle=helmColor;
+      ctx.fillRect(drawX+spriteW*0.25, drawY+spriteH*0.05,
+                   spriteW*0.5, spriteH*0.25);
+
+      // "cara"
+      ctx.fillStyle="#ffdd99";
+      ctx.fillRect(drawX+spriteW*0.35, drawY+spriteH*0.18,
+                   spriteW*0.3, spriteH*0.15);
+
+    } else if(s.kind==='medkit'){
+      ctx.fillStyle="#00aa00";
+      ctx.fillRect(drawX,drawY,spriteW*0.7,spriteH*0.7);
+      ctx.fillStyle="#ffffff";
+      ctx.fillRect(drawX+spriteW*0.22,drawY+spriteH*0.32,
+                   spriteW*0.26,spriteH*0.06);
+      ctx.fillRect(drawX+spriteW*0.31,drawY+spriteH*0.23,
+                   spriteW*0.06,spriteH*0.26);
+
+    } else if(s.kind==='redkey'){
+      ctx.fillStyle="#ff0000";
+      ctx.fillRect(drawX,drawY,spriteW*0.5,spriteH*0.5);
+      ctx.strokeStyle="#fff";
+      ctx.lineWidth=2;
+      ctx.strokeRect(drawX,drawY,spriteW*0.5,spriteH*0.5);
+
+    } else if(s.kind==='proj'){
+      // proyectil: orbe energético amarillo brillante
+      ctx.fillStyle="#ffff55";
+      ctx.beginPath();
+      ctx.arc(drawX+spriteW*0.3,drawY+spriteH*0.3,
+              (spriteW+spriteH)*0.15,0,Math.PI*2);
+      ctx.fill();
+      ctx.strokeStyle="#000";
+      ctx.lineWidth=2;
+      ctx.stroke();
+    }
+  }
 }
 
+/* ============================
+   HUD
+============================ */
+let bigMessageTimer=0;
+function showBigMessage(msg){
+  bigMessage.textContent=msg;
+  bigMessageTimer=3.0;
+}
 function updateBigMessage(dt){
   if(bigMessageTimer>0){
-    bigMessageTimer -= dt;
+    bigMessageTimer-=dt;
     if(bigMessageTimer<=0){
-      bigMessage.textContent = "";
+      bigMessage.textContent="";
       bigMessageTimer=0;
     }
   }
@@ -891,97 +1043,72 @@ function updateBigMessage(dt){
 function renderHUD(){
   debugEl.textContent =
     `HP:${playerHP.toFixed(0)}/${playerMaxHP}  `+
-    `Tarjeta:${hasRedKey?"ROJA":"-" }  `+
-    `Objetivo: ${levelWon?"ESCAPASTE": alive?"Consigue la Tarjeta Roja y llega al Hangar":"MUERTO"}\n`+
+    `Key:${hasRedKey?"ROJA":"-"}  `+
+    `Ctrl:${controlOpened?"ONLINE":"OFF"}  `+
     `x:${px.toFixed(2)} y:${py.toFixed(2)} ang:${pAngle.toFixed(2)}`;
 }
 
-/*
-  ============================
-  VICTORIA
-  ============================
-*/
-function checkWinCondition(){
-  if(!alive || levelWon) return;
-  const cell = worldMap[Math.floor(py)][Math.floor(px)];
-  // cell==2 es hangar de evacuación / salida
-  if(cell===2){
-    if(hasRedKey){
-      levelWon=true;
-      winOverlay.style.display='grid';
-      centerText.textContent = "";
-      showBigMessage("Base Omega evacuada. Nivel completado.");
-    } else {
-      showBigMessage("Puerta sellada.\nNecesitas la Tarjeta Roja.");
-    }
-  }
-}
-
-/*
-  ============================
-  UPDATE GENERAL
-  ============================
-*/
+/* ============================
+   UPDATE GENERAL
+============================ */
 function update(dt){
-  if(!alive || levelWon) return;
+  if(!alive||levelWon) return;
 
-  // player
   updatePlayer(dt);
 
-  // cooldown de disparo
+  // disparo cooldown
   if(shootCooldown>0){
-    shootCooldown -= dt;
+    shootCooldown-=dt;
     if(shootCooldown<0){
       shootCooldown=0;
       shooting=false;
     }
   }
 
-  // regeneración de vida lenta
-  if(regenCooldown>0){
-    regenCooldown-=dt;
-  } else {
+  // regeneración lenta
+  if(regenCooldown>0){ regenCooldown-=dt; }
+  else {
     if(playerHP>0 && playerHP<playerMaxHP){
-      playerHP += 4*dt; // ~4 HP/s lenta
+      playerHP += 4*dt;
       if(playerHP>playerMaxHP) playerHP=playerMaxHP;
     }
   }
 
-  // enemigos
+  // IA y balas
   updateEnemies(dt);
+  updateProjectiles(dt);
 
   // recoger ítems
   pickupItems();
 
-  // check victoria
+  // intentar abrir puertas cercanas automáticamente
+  tryOpenDoors();
+
+  // victoria
   checkWinCondition();
 
-  // mensajes HUD temporales
+  // mensajes temporales
   updateBigMessage(dt);
 }
 
-/*
-  ============================
-  RENDER GENERAL
-  ============================
-*/
+/* ============================
+   RENDER GENERAL
+============================ */
 function render(dt){
   renderWorld();
   renderSprites();
-  renderGun(dt);
+  renderGun();
   renderFlash(dt);
   renderHUD();
 }
 
-/*
-  ============================
-  LOOP PRINCIPAL
-  ============================
-*/
-let lastT = performance.now();
+/* ============================
+   LOOP
+============================ */
+let lastT=performance.now();
 function gameLoop(now){
-  const dt = (now-lastT)/1000;
-  lastT = now;
+  const dt=(now-lastT)/1000;
+  lastT=now;
 
   update(dt);
   render(dt);
@@ -989,21 +1116,18 @@ function gameLoop(now){
   requestAnimationFrame(gameLoop);
 }
 
-/*
-  ============================
-  START
-  ============================
-*/
+/* ============================
+   START
+============================ */
 startBtn.addEventListener('click', ()=>{
   startOverlay.style.display='none';
   if(!levelWon && alive){
-    centerText.textContent = "Click para capturar mouse";
+    centerText.textContent="Click para capturar mouse";
   }
   lockPointer();
-  lastT = performance.now();
+  lastT=performance.now();
   requestAnimationFrame(gameLoop);
 });
-
 </script>
 </body>
 </html>
